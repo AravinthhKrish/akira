@@ -1,0 +1,105 @@
+version: "3.9"
+
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+    environment:
+      PORT: 3000
+      ORCHESTRATOR_URL: http://orchestrator:9000
+      OBSERVABILITY_LOG_DIR: /app/data/observability/logs
+    ports:
+      - "3000:3000"
+    depends_on:
+      - orchestrator
+    volumes:
+      - ./data/observability:/app/data/observability
+
+  storage-mcp-platform:
+    build:
+      context: .
+      dockerfile: services/storage-mcp-platform/Dockerfile
+    environment:
+      PORT: 9100
+      STORAGE_DATA_DIR: /app/data/storage
+      OBSERVABILITY_LOG_DIR: /app/data/observability/logs
+    ports:
+      - "9100:9100"
+    volumes:
+      - storage-data:/app/data/storage
+      - ./data/observability:/app/data/observability
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: services/orchestrator/Dockerfile
+    environment:
+      PORT: 9000
+      STORAGE_URL: http://storage-mcp-platform:9100
+      MCP_SERVER_URL: http://mcp-server-generic:8080
+      AGENT_RUNTIME_URL: http://agent-runtime:8081
+      OBSERVABILITY_LOG_DIR: /app/data/observability/logs
+      DASHBOARD_URL: http://dashboard:3000
+    ports:
+      - "9000:9000"
+    depends_on:
+      - storage-mcp-platform
+      - agent-runtime
+    volumes:
+      - ./data/observability:/app/data/observability
+
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+
+  agent-runtime:
+    build:
+      context: .
+      dockerfile: services/agent-runtime/Dockerfile
+    ports:
+      - "8081:8081"
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    profiles: ["observability"]
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    volumes:
+      - ./ops/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.108.0
+    profiles: ["observability"]
+    command:
+      - "--config=/etc/otelcol-contrib/config.yaml"
+    volumes:
+      - ./ops/observability/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - ./data/observability/logs:/var/log/akira:ro
+    depends_on:
+      - orchestrator
+      - dashboard
+      - storage-mcp-platform
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    profiles: ["observability"]
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+    ports:
+      - "9200:9200"
+
+  mcp-server-generic:
+    build:
+      context: ../mcp-server-generic
+    ports:
+      - "8080:8080"
+
+volumes:
+  storage-data:

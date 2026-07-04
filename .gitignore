@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.DS_Store
+.pytest_cache/
+__pycache__/
+*.pyc
+.venv/
+.gradle/
+services/agent-runtime/.kotlin/
+services/agent-runtime/build/
+data/
+artifacts/
+coverage/
+logs/

@@ -1,0 +1,14 @@
+{
+  "name": "idea-workshop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dashboard": "node apps/dashboard/server.mjs",
+    "storage": "node services/storage-mcp-platform/server.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "test:storage": "node --test services/storage-mcp-platform/tests/storage.test.mjs",
+    "test:dashboard": "node --test apps/dashboard/server.test.mjs"
+  }
+}
+

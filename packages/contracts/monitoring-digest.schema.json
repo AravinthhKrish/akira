@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MonitoringDigest",
+  "type": "object",
+  "required": [
+    "digestId",
+    "window",
+    "headline",
+    "healthSummary",
+    "modelUsageSummary",
+    "audio"
+  ],
+  "properties": {
+    "digestId": {
+      "type": "string"
+    },
+    "window": {
+      "type": "object",
+      "required": [
+        "start",
+        "end"
+      ],
+      "properties": {
+        "start": {
+          "type": "string"
+        },
+        "end": {
+          "type": "string"
+        }
+      }
+    },
+    "headline": {
+      "type": "string"
+    },
+    "healthSummary": {
+      "type": "object"
+    },
+    "memorySummary": {
+      "type": "object"
+    },
+    "modelUsageSummary": {
+      "type": "object"
+    },
+    "incidents": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "script": {
+      "type": "string"
+    },
+    "audio": {
+      "type": "object",
+      "required": [
+        "mode",
+        "status"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "mimeType": {
+          "type": "string"
+        },
+        "encoding": {
+          "type": "string"
+        },
+        "base64Data": {
+          "type": "string"
+        },
+        "ssml": {
+          "type": "string"
+        },
+        "transcript": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}

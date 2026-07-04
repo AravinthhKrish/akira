@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TaskEvent",
+  "type": "object",
+  "required": [
+    "specversion",
+    "id",
+    "source",
+    "type",
+    "time",
+    "data"
+  ],
+  "properties": {
+    "specversion": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "subject": {
+      "type": "string"
+    },
+    "time": {
+      "type": "string"
+    },
+    "traceparent": {
+      "type": "string"
+    },
+    "tracestate": {
+      "type": "string"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "task_id",
+        "run_id",
+        "event_seq",
+        "state",
+        "audience"
+      ],
+      "properties": {
+        "task_id": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "agent_id": {
+          "type": "string"
+        },
+        "parent_agent_id": {
+          "type": "string"
+        },
+        "event_seq": {
+          "type": "integer"
+        },
+        "narrative_seq": {
+          "type": "integer"
+        },
+        "state": {
+          "type": "string"
+        },
+        "progress": {
+          "type": "integer"
+        },
+        "total": {
+          "type": "integer"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "audience": {
+          "type": "string",
+          "enum": [
+            "machine",
+            "narrative"
+          ]
+        },
+        "derived_from": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}

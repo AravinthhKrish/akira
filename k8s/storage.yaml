@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: storagemcp-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: storagemcp-platform
+  template:
+    metadata:
+      labels:
+        app: storagemcp-platform
+    spec:
+      containers:
+        - name: storage
+          image: storagemcp-platform:latest
+          ports:
+            - containerPort: 9100
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: storagemcp-platform
+spec:
+  selector:
+    app: storagemcp-platform
+  ports:
+    - port: 9100
+      targetPort: 9100
+

@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ServiceLogRecord",
+  "type": "object",
+  "required": [
+    "dateTime",
+    "serviceName",
+    "logLevel",
+    "threadName",
+    "threadNumber",
+    "className",
+    "message",
+    "context"
+  ],
+  "properties": {
+    "dateTime": {
+      "type": "string"
+    },
+    "serviceName": {
+      "type": "string"
+    },
+    "logLevel": {
+      "type": "string"
+    },
+    "threadName": {
+      "type": "string"
+    },
+    "threadNumber": {
+      "type": "integer"
+    },
+    "className": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "indexType": {
+      "type": "string"
+    },
+    "environment": {
+      "type": "string"
+    },
+    "context": {
+      "type": "object",
+      "required": [
+        "traceId",
+        "spanId"
+      ],
+      "properties": {
+        "traceId": {
+          "type": "string"
+        },
+        "spanId": {
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "runId": {
+          "type": "string"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
+

@@ -1,0 +1,23 @@
+receivers:
+  filelog:
+    include:
+      - /var/log/akira/*.jsonl
+    start_at: beginning
+
+processors:
+  batch: {}
+
+exporters:
+  debug: {}
+  elasticsearch:
+    endpoints:
+      - http://elasticsearch:9200
+    logs_index: akira-service-logs
+
+service:
+  pipelines:
+    logs:
+      receivers: [filelog]
+      processors: [batch]
+      exporters: [debug, elasticsearch]
+

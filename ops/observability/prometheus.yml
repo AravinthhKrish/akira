@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "akira-services"
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - dashboard:3000
+          - orchestrator:9000
+          - storage-mcp-platform:9100
+          - agent-runtime:8081
+
