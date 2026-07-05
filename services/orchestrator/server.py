@@ -20,6 +20,7 @@ if str(CURRENT_DIR) not in sys.path:
 from mcp_client import MCPClient
 from audio_renderer import render_audio_payload
 from log_reader import MonitoringLogReader
+from model_router import ModelRouter
 from observability import MetricsRegistry, StructuredLogger, UsageTracker, now_iso
 from storage_client import StorageClient
 from worker_client import WorkerClient
@@ -57,6 +58,7 @@ class TaskManager:
         logger: StructuredLogger | None = None,
         metrics: MetricsRegistry | None = None,
         usage_tracker: UsageTracker | None = None,
+        model_router: ModelRouter | None = None,
         service_urls: dict[str, str] | None = None,
     ):
         self.storage = storage
@@ -69,6 +71,7 @@ class TaskManager:
         self.logger = logger or StructuredLogger("orchestrator")
         self.metrics = metrics or MetricsRegistry("orchestrator")
         self.usage_tracker = usage_tracker or UsageTracker()
+        self.model_router = model_router or ModelRouter()
         self.log_dir = Path(os.environ.get("OBSERVABILITY_LOG_DIR", "data/observability/logs"))
         self.elastic_url = os.environ.get("ELASTICSEARCH_URL")
         self.log_reader = MonitoringLogReader(
@@ -134,6 +137,7 @@ class TaskManager:
                 "interrupt": False,
                 "waitingForConfirmation": False,
             },
+            "modelRouting": {},
         }
         self.metrics.inc("akira_tasks_created_total", labels={"type": task_type})
         self._save_task(task)
@@ -173,6 +177,7 @@ class TaskManager:
                 "interrupt": False,
                 "waitingForConfirmation": False,
             },
+            "modelRouting": {},
         }
         self._save_task(task)
         return task
@@ -196,11 +201,20 @@ class TaskManager:
     def get_replay(self, task_id: str, from_seq: int = 0) -> list[dict]:
         return self.storage.get_events(task_id, from_seq)
 
-    def list_monitoring_digests(self, limit: int = 10) -> list[dict]:
+    def list_tasks(self) -> list[dict]:
         try:
             tasks = self.storage.list_tasks()
         except Exception:
             tasks = list(self.tasks.values())
+        for task in tasks:
+            try:
+                task["artifacts"] = self.storage.list_artifacts(task["taskId"])
+            except Exception:
+                task["artifacts"] = task.get("artifacts", [])
+        return tasks
+
+    def list_monitoring_digests(self, limit: int = 10) -> list[dict]:
+        tasks = self.list_tasks()
         monitoring_tasks = [
             task for task in tasks
             if task.get("type") == "system-monitoring"
@@ -217,6 +231,253 @@ class TaskManager:
                 "artifacts": artifacts,
             })
         return enriched
+
+    def _humanize_role(self, role: str | None) -> str:
+        names = {
+            "source_discovery": "Research Agent",
+            "normalize_dedupe": "Normalization Agent",
+            "rank_cluster": "Ranking Agent",
+            "draft_structure": "Structure Agent",
+            "draft_script": "Script Agent",
+            "citation_validator": "Citation Agent",
+            "show_notes": "Show Notes Agent",
+        }
+        return names.get(role or "", "Agent")
+
+    def _stage_index_for_role(self, role: str | None) -> int | None:
+        if not role:
+            return None
+        for index, stage in enumerate(STAGES):
+            if stage.role == role:
+                return index
+        return None
+
+    def _agent_rows(self, tasks: list[dict]) -> list[dict]:
+        total_tasks = max(len(tasks), 1)
+        rows = []
+        for stage in STAGES:
+            if not stage.role:
+                continue
+            stage_index = self._stage_index_for_role(stage.role)
+            if stage_index is None:
+                continue
+            stage_tasks = [
+                task for task in tasks
+                if int(task.get("stageIndex", 0)) == stage_index and task.get("status") in {"submitted", "working", "paused", "interrupted"}
+            ]
+            completed_tasks = [
+                task for task in tasks
+                if task.get("status") == "completed" and int(task.get("stageIndex", 0)) >= stage_index
+            ]
+            failed_tasks = [
+                task for task in tasks
+                if task.get("status") == "failed" and int(task.get("stageIndex", 0)) >= stage_index
+            ]
+            load = min(100, max(0, round(((len(stage_tasks) + len(completed_tasks)) / total_tasks) * 100)))
+            if stage_tasks:
+                status = "Working"
+            elif completed_tasks:
+                status = "Ready"
+                load = 100
+            elif failed_tasks:
+                status = "Degraded"
+            else:
+                status = "Idle"
+            rows.append({
+                "id": stage.role,
+                "name": self._humanize_role(stage.role),
+                "subtitle": f"{len(stage_tasks)} active task{'s' if len(stage_tasks) != 1 else ''}",
+                "stage": stage.name,
+                "status": status,
+                "progress": load,
+                "tone": {
+                    "source_discovery": "violet",
+                    "normalize_dedupe": "blue",
+                    "rank_cluster": "teal",
+                    "draft_structure": "amber",
+                    "draft_script": "pink",
+                    "citation_validator": "green",
+                    "show_notes": "indigo",
+                }.get(stage.role, "violet"),
+            })
+        return rows
+
+    def _build_alerts(self, monitoring: dict, tasks: list[dict]) -> list[dict]:
+        alerts = []
+        for service_name, payload in monitoring.get("health", {}).items():
+            if not payload.get("ok", False):
+                alerts.append({
+                    "severity": "high",
+                    "title": f"{service_name} is degraded",
+                    "detail": payload.get("error") or "Health check failed",
+                    "source": service_name,
+                })
+        if monitoring.get("usage", {}).get("summary", {}).get("requestCount", 0) > 0:
+            alerts.append({
+                "severity": "medium",
+                "title": "Model usage active",
+                "detail": f"{monitoring['usage']['summary']['requestCount']} requests in the current window",
+                "source": "orchestrator",
+            })
+        for task in tasks:
+            if task.get("status") in {"paused", "interrupted"}:
+                alerts.append({
+                    "severity": "medium",
+                    "title": f"Task {task['taskId']} is {task['status']}",
+                    "detail": task.get("stage", "Unknown stage"),
+                    "source": task.get("type", "task"),
+                })
+        return alerts[:6]
+
+    def _task_rows(self, tasks: list[dict]) -> list[dict]:
+        rows = []
+        for task in tasks[:10]:
+            rows.append({
+                "taskId": task["taskId"],
+                "topic": task.get("topic", ""),
+                "status": task.get("status", ""),
+                "stage": task.get("stage", ""),
+                "progress": task_progress(task),
+                "updatedAt": task.get("updatedAt"),
+                "artifactCount": len(task.get("artifacts", [])),
+                "type": task.get("type", "news-podcast"),
+            })
+        return rows
+
+    def _recent_updates(self, tasks: list[dict], monitoring: dict) -> list[dict]:
+        updates = []
+        for task in tasks[:6]:
+            updates.append({
+                "title": task.get("topic") or task["taskId"],
+                "detail": f"{task.get('stage', 'unknown stage')} • {task.get('status', 'unknown status')}",
+                "time": task.get("updatedAt"),
+                "status": task.get("status"),
+            })
+        for item in monitoring.get("latestDigests", [])[:2]:
+            task = item.get("task", {})
+            artifact_list = item.get("artifacts") or [{}]
+            artifact = artifact_list[0]
+            updates.append({
+                "title": artifact.get("headline") or "Monitoring digest",
+                "detail": f"{task.get('status', 'completed')} • {artifact.get('audio', {}).get('status', 'audio-first')}",
+                "time": task.get("updatedAt"),
+                "status": "completed",
+            })
+        return updates[:8]
+
+    def _upcoming_highlights(self, tasks: list[dict], monitoring: dict) -> list[dict]:
+        alerts = monitoring.get("health", {})
+        highlights = [
+            {
+                "label": "Team Standup Summary",
+                "time": "10:00 AM",
+                "detail": "Live digest pulse",
+            },
+            {
+                "label": "System Monitoring Podcast",
+                "time": "On demand",
+                "detail": f"{monitoring.get('usage', {}).get('summary', {}).get('requestCount', 0)} model calls this window",
+            },
+            {
+                "label": "Next digest refresh",
+                "time": f"{self.monitor_window_minutes} minutes",
+                "detail": "Scheduled from the orchestrator",
+            },
+        ]
+        if any(not payload.get("ok", False) for payload in alerts.values()):
+            highlights.insert(0, {
+                "label": "Attention required",
+                "time": "Now",
+                "detail": "One or more services are degraded",
+            })
+        if tasks:
+            latest = tasks[0]
+            highlights.append({
+                "label": latest.get("topic", "Latest task"),
+                "time": latest.get("updatedAt", ""),
+                "detail": f"{latest.get('stage', '')} • {latest.get('status', '')}",
+            })
+        return highlights[:5]
+
+    def get_dashboard_overview(self) -> dict:
+        tasks = self.list_tasks()
+        content_tasks = [task for task in tasks if task.get("type") != "system-monitoring"]
+        monitoring = self.get_monitoring_overview(window_minutes=self.monitor_window_minutes, digest_limit=5)
+        active_tasks = [task for task in content_tasks if task.get("status") in {"submitted", "working", "paused", "interrupted"}]
+        completed_tasks = [task for task in content_tasks if task.get("status") == "completed"]
+        alerts = self._build_alerts(monitoring, content_tasks)
+        agent_rows = self._agent_rows(content_tasks)
+        active_task = next((task for task in active_tasks if task.get("status") == "working"), None)
+        if active_task is None:
+            active_task = active_tasks[0] if active_tasks else (content_tasks[0] if content_tasks else None)
+        active_task_events = []
+        active_task_audio = None
+        if active_task:
+            try:
+                active_task_events = self.get_replay(active_task["taskId"], max(0, int(active_task.get("eventSeq", 0)) - 10))
+            except Exception:
+                active_task_events = []
+            artifacts = active_task.get("artifacts", [])
+            active_task_audio = artifacts[0].get("audio") if artifacts else None
+        current_narrative = next((event for event in reversed(active_task_events) if event.get("data", {}).get("audience") == "narrative"), None)
+        latest_digest = (monitoring.get("latestDigests") or [None])[0]
+        digest_artifacts = (latest_digest or {}).get("artifacts") or [{}]
+        digest_artifact = digest_artifacts[0]
+        cards = [
+            {
+                "key": "activeAgents",
+                "label": "Active Agents",
+                "value": len(agent_rows),
+                "detail": "Online",
+                "tone": "violet",
+            },
+            {
+                "key": "tasksInProgress",
+                "label": "Tasks in Progress",
+                "value": len(active_tasks),
+                "detail": "Across all agents",
+                "tone": "blue",
+            },
+            {
+                "key": "tasksCompleted",
+                "label": "Tasks Completed",
+                "value": len(completed_tasks),
+                "detail": "This week",
+                "tone": "green",
+            },
+            {
+                "key": "alerts",
+                "label": "Alerts",
+                "value": len(alerts),
+                "detail": "Requires attention",
+                "tone": "amber",
+            },
+        ]
+        return {
+            "title": "AKIRA Command Center",
+            "greeting": "Good morning",
+            "subtitle": "Here’s what AKIRA has been up to.",
+            "windowMinutes": monitoring.get("windowMinutes", self.monitor_window_minutes),
+            "modelRouter": self.get_model_router_config(),
+            "cards": cards,
+            "hero": {
+                "title": "Agent Podcast (Live)",
+                "status": "Live" if active_task and active_task.get("status") == "working" else "Ready",
+                "summary": "Listening to your agents. Humanized updates, just like AKIRA.",
+                "speaker": current_narrative.get("data", {}).get("message") if current_narrative else (
+                    digest_artifact.get("headline") or "Narration standing by"
+                ),
+                "task": active_task,
+                "events": active_task_events[-8:],
+                "audio": active_task_audio or digest_artifact.get("audio"),
+            },
+            "agents": agent_rows,
+            "tasks": self._task_rows(content_tasks),
+            "updates": self._recent_updates(content_tasks, monitoring),
+            "highlights": self._upcoming_highlights(content_tasks, monitoring),
+            "alerts": alerts,
+            "monitoring": monitoring,
+        }
 
     def get_monitoring_overview(self, window_minutes: int | None = None, digest_limit: int = 5) -> dict:
         window_minutes = window_minutes or self.monitor_window_minutes
@@ -237,6 +498,20 @@ class TaskManager:
             "latestDigests": digests,
             "logSource": "elastic" if self.elastic_url else "local",
         }
+
+    def get_model_router_config(self) -> dict:
+        return self.model_router.snapshot()
+
+    def update_model_router_config(self, payload: dict) -> dict:
+        return self.model_router.update(payload)
+
+    def resolve_model_route(self, payload: dict) -> dict:
+        return self.model_router.resolve(
+            task=payload.get("task") if isinstance(payload.get("task"), dict) else None,
+            stage_name=payload.get("stageName") or payload.get("stage"),
+            role=payload.get("role"),
+            fallback_model=payload.get("fallbackModel") or payload.get("defaultModel"),
+        )
 
     def handle_interrupt(self, task_id: str, action: str, priority: str | None = None) -> dict:
         with self.lock:
@@ -440,6 +715,12 @@ class TaskManager:
         )
         self.metrics.inc("akira_model_requests_total", labels={"model": model, "agent": agent_id})
 
+    def _route_model(self, task: dict, stage_name: str, role: str | None, fallback_model: str) -> dict:
+        route = self.model_router.resolve(task=task, stage_name=stage_name, role=role, fallback_model=fallback_model)
+        task.setdefault("modelRouting", {})[stage_name] = route
+        self._save_task(task)
+        return route
+
     def _run_task(self, task_id: str, resume: bool = False):
         task = self.tasks[task_id]
         if task["status"] not in {"completed", "failed"}:
@@ -499,13 +780,14 @@ class TaskManager:
                     self.emit_narrative_event(task, "Ranked the sources and grouped them into themes.")
 
                 elif stage.name == "draft_structure":
+                    route = self._route_model(task, stage.name, stage.role, "gpt-4.1-mini")
                     structure = self.workers.execute(
                         stage.role,
-                        {"topic": task["topic"], "ranked": task["rankedSources"]},
+                        {"topic": task["topic"], "ranked": task["rankedSources"], "model": route["model"]},
                     )
                     task["structure"] = structure
                     self._record_usage(
-                        model="gpt-4.1-mini",
+                        model=route["model"],
                         agent_id="draft_structure",
                         prompt_tokens=280,
                         completion_tokens=120,
@@ -515,17 +797,19 @@ class TaskManager:
                     self.emit_narrative_event(task, "Built the episode structure and title options.")
 
                 elif stage.name == "generate_script":
+                    route = self._route_model(task, stage.name, stage.role, "gpt-4.1")
                     script = self.workers.execute(
                         stage.role,
                         {
                             "topic": task["topic"],
                             "structure": task["structure"],
                             "ranked": task["rankedSources"],
+                            "model": route["model"],
                         },
                     )
                     task["scriptPackage"] = script
                     self._record_usage(
-                        model="gpt-4.1",
+                        model=route["model"],
                         agent_id="draft_script",
                         prompt_tokens=920,
                         completion_tokens=640,
@@ -535,13 +819,14 @@ class TaskManager:
                     self.emit_narrative_event(task, "Drafted the sourced script package.")
 
                 elif stage.name == "validate_citations":
+                    route = self._route_model(task, stage.name, stage.role, "gpt-4.1-mini")
                     validated = self.workers.execute(
                         stage.role,
-                        {"script": task["scriptPackage"], "sources": task["sources"]},
+                        {"script": task["scriptPackage"], "sources": task["sources"], "model": route["model"]},
                     )
                     task["scriptPackage"] = validated
                     self._record_usage(
-                        model="gpt-4.1-mini",
+                        model=route["model"],
                         agent_id="citation_validator",
                         prompt_tokens=420,
                         completion_tokens=140,
@@ -745,7 +1030,12 @@ class TaskManager:
         self._save_task(task)
         self.metrics.inc("akira_monitoring_digest_runs_total", labels={"trigger": trigger})
         self._record_usage(
-            model="gpt-4.1-mini",
+            model=self.model_router.resolve(
+                task=task,
+                stage_name="publish_monitoring_digest",
+                role="system_monitoring",
+                fallback_model="gpt-4.1-mini",
+            )["model"],
             agent_id="system-monitoring-podcast",
             prompt_tokens=560,
             completion_tokens=320,
@@ -859,6 +1149,25 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
                 window = parse_window_minutes(query.get("window", [None])[0], self.manager.monitor_window_minutes)
                 return self._json(200, self.manager.get_monitoring_overview(window, limit))
 
+            if parsed.path == "/v1/dashboard/overview":
+                return self._json(200, self.manager.get_dashboard_overview())
+
+            if parsed.path == "/v1/model-router":
+                return self._json(200, self.manager.get_model_router_config())
+
+            if parsed.path == "/v1/model-router/resolve":
+                query = parse_qs(parsed.query)
+                payload = {
+                    "stage": query.get("stage", [None])[0],
+                    "role": query.get("role", [None])[0],
+                    "fallbackModel": query.get("fallbackModel", [None])[0],
+                    "defaultModel": query.get("defaultModel", [None])[0],
+                }
+                return self._json(200, self.manager.resolve_model_route(payload))
+
+            if parsed.path == "/v1/tasks":
+                return self._json(200, {"tasks": self.manager.list_tasks()})
+
             if parsed.path.startswith("/v1/tasks/") and parsed.path.endswith("/status"):
                 task_id = parsed.path.split("/")[3]
                 task = self.manager.get_task(task_id)
@@ -955,6 +1264,10 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
                 result = self.manager.generate_monitoring_digest(trigger="manual", window_minutes=window_minutes)
                 return self._json(201, result)
 
+            if parsed.path == "/v1/model-router":
+                body = self._read_json()
+                return self._json(200, self.manager.update_model_router_config(body))
+
             if parsed.path.startswith("/v1/tasks/") and parsed.path.endswith("/interrupt"):
                 task_id = parsed.path.split("/")[3]
                 body = self._read_json()
@@ -991,6 +1304,7 @@ def main():
     logger = StructuredLogger("orchestrator")
     metrics = MetricsRegistry("orchestrator")
     usage_tracker = UsageTracker()
+    model_router = ModelRouter()
     storage = StorageClient(os.environ.get("STORAGE_URL", "http://127.0.0.1:9100"))
     mcp = MCPClient(os.environ.get("MCP_SERVER_URL"))
     workers = WorkerClient(os.environ.get("AGENT_RUNTIME_URL"))
@@ -1001,6 +1315,7 @@ def main():
         logger=logger,
         metrics=metrics,
         usage_tracker=usage_tracker,
+        model_router=model_router,
     )
     manager.bootstrap()
     OrchestratorHandler.manager = manager

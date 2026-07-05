@@ -12,6 +12,8 @@ docs/journey/
 │   └── 2026-07-05-initial-context.md
 │   └── 2026-07-05-structured-observability.md
 │   └── 2026-07-05-local-verification.md
+│   └── 2026-07-05-akira-command-center.md
+│   └── 2026-07-05-model-router-config.md
 └── layers/
     ├── dashboard.md
     ├── orchestrator.md

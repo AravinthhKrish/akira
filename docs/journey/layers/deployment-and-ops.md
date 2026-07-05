@@ -22,10 +22,13 @@ The ops layer makes the platform runnable locally today while keeping a clear pa
 - `scripts/smoke.mjs` for end-to-end health and task smoke flow
 - `ops/observability/` for Prometheus scrape config and collector-to-Elastic scaffolding
 - shared local observability log mirror mounted through compose
+- environment knobs for dynamic model routing (`MODEL_ROUTER_URL`, auth mode, credentials, and per-role/stage maps)
+- orchestrator API support for live router inspection and update
 
 ## Near-term improvements
 
 - add env example files and startup docs per service
+- document model-router auth modes and safe credential handling in the startup docs
 - separate dev vs production compose profiles
 - add persistence volumes and resource requests to manifests
 - decide when JetStream becomes a hard runtime dependency instead of a direction
