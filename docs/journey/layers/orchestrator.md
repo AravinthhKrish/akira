@@ -40,6 +40,13 @@ The orchestrator owns task lifecycle, workflow control, replay coordination, and
 - monitoring digests are generated inside the orchestrator and stored as artifacts under monitoring tasks
 - monitoring log reads prefer Elastic when configured, with local log-mirror fallback
 - monitoring artifacts now include playable audio payload data
+- `/v1/dashboard/overview` aggregates content-task, monitoring, agent, alert, and hero data for the dashboard
+- overview generation filters monitoring tasks out of the main workflow story
+- dashboard-oriented tests cover the aggregation endpoint and its edge cases
+- model routing is dynamic through `services/orchestrator/model_router.py`
+- router config supports URL, auth mode, bearer/basic/header credentials, default model, and per-role/per-stage/task-type mappings
+- `/v1/model-router` exposes the active router config and update hook
+- stage execution records the selected model in usage telemetry instead of relying on hardcoded literals
 
 ## Near-term improvements
 
@@ -49,6 +56,7 @@ The orchestrator owns task lifecycle, workflow control, replay coordination, and
 - add stronger error categories and retry policies per stage
 - support richer structured trace propagation
 - replace local structured-log reads with Elastic-backed monitoring queries
+- persist router configuration separately if the live update surface becomes a shared operational need
 
 ## Guardrails
 

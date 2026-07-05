@@ -28,11 +28,15 @@ The dashboard is the human control surface for the platform. It should make the 
 - structured JSON service logs
 - `/metrics` endpoint with request and voice-session counters
 - operations overview panel for service health, memory/error summaries, model usage, and monitoring digests
+- AKIRA command-center shell with summary cards, task browser, podcast hero, agents, and alerts views
+- `/api/dashboard/overview` wiring to the orchestrator aggregation endpoint
+- live progress controls for new task, summary, replay, voice, and audio toggle actions
 
 ## Near-term improvements
 
 - richer task list and historical run browser
 - source/citation drill-down UI
+- better empty-state handling for monitoring-only windows
 - better replay filtering between machine and narrative events
 - explicit microphone permission and failure states
 - transport/auth hardening for WebSocket voice sessions

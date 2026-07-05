@@ -3,107 +3,182 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AKIRA Platform Console</title>
+    <title>AKIRA Command Center</title>
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
-    <div class="shell">
-      <header class="topbar">
-        <div>
-          <div class="eyebrow">Idea Workshop</div>
-          <h1>AKIRA Platform Console</h1>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="32" cy="32" r="26"></circle>
+              <path d="M18 33h6l4-10 6 20 5-12h7"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="brand-title">AKIRA</div>
+            <div class="brand-subtitle">Agent Listener</div>
+          </div>
         </div>
-        <div class="status-strip">
-          <span id="connection-badge" class="badge">Idle</span>
-          <span id="voice-badge" class="badge subtle">Voice off</span>
+
+        <nav class="nav" aria-label="Primary">
+          <button class="nav-item active" data-view="home">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 11.5 12 4l8 7.5"></path>
+                <path d="M6 10.5V20h12v-9.5"></path>
+                <path d="M10 20v-6h4v6"></path>
+              </svg>
+            </span>
+            <span>Home</span>
+          </button>
+          <button class="nav-item" data-view="podcast">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 4v16"></path>
+                <path d="M8 8c0 2.2-1.8 4-4 4v0c2.2 0 4 1.8 4 4"></path>
+                <path d="M16 8c0 2.2 1.8 4 4 4v0c-2.2 0-4 1.8-4 4"></path>
+              </svg>
+            </span>
+            <span>Podcast</span>
+          </button>
+          <button class="nav-item" data-view="tasks">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="4" y="4" width="16" height="16" rx="3"></rect>
+                <path d="M8 9h8"></path>
+                <path d="M8 13h8"></path>
+                <path d="M8 17h5"></path>
+              </svg>
+            </span>
+            <span>Tasks</span>
+          </button>
+          <button class="nav-item" data-view="agents">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="16" rx="4"></rect>
+                <path d="M8 9h8"></path>
+                <path d="M8 13h5"></path>
+              </svg>
+            </span>
+            <span>Agents</span>
+          </button>
+          <button class="nav-item" data-view="alerts">
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3 4 19h16L12 3Z"></path>
+                <path d="M12 9v4"></path>
+                <path d="M12 17h.01"></path>
+              </svg>
+            </span>
+            <span>Alerts</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-card panel">
+          <div class="sidebar-card-title">AKIRA at your service</div>
+          <div class="sidebar-card-copy">Listening • Understanding • Simplifying</div>
+          <div class="status-dots">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
         </div>
-      </header>
+      </aside>
 
-      <main class="workspace">
-        <section class="column control-column">
-          <div class="section-header">
-            <h2>Task Control</h2>
+      <div class="content">
+        <header class="topbar">
+          <div>
+            <div class="eyebrow" id="greeting-label">Good morning</div>
+            <h1 id="headline">Here’s what your agents have been up to.</h1>
+            <p class="topbar-subtitle" id="subheadline">Live command center for podcast production, monitoring, and task orchestration.</p>
           </div>
-          <label class="field">
-            <span>Topic</span>
-            <textarea id="topic-input" rows="5">multi agent platform news, voice interfaces, storage mcp, orchestration</textarea>
-          </label>
-          <div class="button-row">
-            <button id="create-task">Start Task</button>
-            <button id="pause-task">Pause</button>
-            <button id="resume-task">Resume</button>
-            <button id="interrupt-task">Interrupt</button>
+          <div class="topbar-actions">
+            <button id="create-task" class="primary-action">+ New Task</button>
+            <button id="run-monitoring-digest" class="icon-action" title="Run monitoring digest">
+              <span aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 12h4"></path>
+                  <path d="M16 12h4"></path>
+                  <path d="M12 4v4"></path>
+                  <path d="M12 16v4"></path>
+                  <circle cx="12" cy="12" r="4"></circle>
+                </svg>
+              </span>
+            </button>
+            <button id="voice-toggle" class="icon-action" title="Wake word">
+              <span aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 3v6"></path>
+                  <path d="M8 9a4 4 0 0 0 8 0"></path>
+                  <path d="M5 12a7 7 0 0 0 14 0"></path>
+                  <path d="M12 19v2"></path>
+                </svg>
+              </span>
+            </button>
+            <button id="audio-toggle" class="icon-action" title="Audio on/off">
+              <span aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M11 5 6 9H3v6h3l5 4V5Z"></path>
+                  <path d="M16 9a4 4 0 0 1 0 6"></path>
+                  <path d="M19 6a8 8 0 0 1 0 12"></path>
+                </svg>
+              </span>
+            </button>
+            <span id="connection-badge" class="badge">Idle</span>
+            <span id="voice-badge" class="badge subtle">Voice off</span>
+            <div class="avatar" aria-hidden="true">AK</div>
           </div>
-          <div class="button-row">
-            <button id="summary-task">Ask Summary</button>
-            <button id="replay-task">Load Replay</button>
-          </div>
-          <div class="button-row">
-            <button id="voice-toggle">Wake Word</button>
-            <button id="audio-toggle">Audio On</button>
-          </div>
+        </header>
 
-          <div class="panel">
-            <h3>Current Task</h3>
-            <dl class="meta-list">
-              <div><dt>ID</dt><dd id="task-id">None</dd></div>
-              <div><dt>Status</dt><dd id="task-status">Idle</dd></div>
-              <div><dt>Stage</dt><dd id="task-stage">Waiting</dd></div>
-              <div><dt>Progress</dt><dd id="task-progress">0%</dd></div>
-            </dl>
-          </div>
+        <section id="summary-cards" class="summary-grid"></section>
 
-          <div class="panel">
-            <h3>Voice Session</h3>
-            <p class="muted">Say “AKIRA start …”, “AKIRA pause”, “AKIRA resume”, “AKIRA summary”, or “AKIRA stop”.</p>
-            <div id="voice-log" class="voice-log"></div>
-          </div>
-        </section>
+        <section id="hero-panel" class="panel hero-panel"></section>
 
-        <section class="column timeline-column">
-          <div class="section-header">
-            <h2>Live Progress</h2>
-            <span id="current-speaker" class="muted">Narration standing by</span>
-          </div>
-          <div id="timeline" class="timeline"></div>
-
-          <div class="panel">
-            <div class="section-header">
-              <h3>Operations Overview</h3>
-              <button id="run-monitoring-digest">Run Digest</button>
+        <main class="views">
+          <section id="view-home" class="view active">
+            <div class="view-grid two-up">
+              <section class="panel" id="home-updates"></section>
+              <section class="panel" id="home-highlights"></section>
             </div>
-            <dl class="meta-list compact">
-              <div><dt>Usage window</dt><dd id="usage-window">15m</dd></div>
-              <div><dt>Log source</dt><dd id="log-source">local</dd></div>
-              <div><dt>Model requests</dt><dd id="usage-requests">0</dd></div>
-              <div><dt>Total tokens</dt><dd id="usage-tokens">0</dd></div>
-              <div><dt>Cost (USD)</dt><dd id="usage-cost">0.000000</dd></div>
-            </dl>
-            <div id="service-health" class="health-grid"></div>
-          </div>
-        </section>
+            <div class="view-grid two-up">
+              <section class="panel" id="home-agents"></section>
+              <section class="panel" id="home-alerts"></section>
+            </div>
+          </section>
 
-        <section class="column artifact-column">
-          <div class="section-header">
-            <h2>Artifact Bundle</h2>
-          </div>
-          <div class="panel artifact-panel">
-            <h3 id="artifact-title">No artifact yet</h3>
-            <div id="artifact-summary" class="muted">Start a task to generate the script package.</div>
-            <div id="artifact-script" class="script-view"></div>
-          </div>
-          <div class="panel">
-            <h3>Sources</h3>
-            <ul id="source-list" class="source-list"></ul>
-          </div>
+          <section id="view-podcast" class="view">
+            <div class="view-grid two-up">
+              <section class="panel" id="podcast-transcript"></section>
+              <section class="panel" id="podcast-artifact"></section>
+            </div>
+            <section class="panel" id="podcast-audio"></section>
+          </section>
 
-          <div class="panel">
-            <h3>Monitoring Podcast Digests</h3>
-            <div id="monitoring-digests" class="digest-list"></div>
-          </div>
-        </section>
-      </main>
+          <section id="view-tasks" class="view">
+            <div class="view-grid two-up">
+              <section class="panel" id="tasks-list"></section>
+              <section class="panel" id="task-detail"></section>
+            </div>
+          </section>
+
+          <section id="view-agents" class="view">
+            <div class="view-grid two-up">
+              <section class="panel" id="agents-roster"></section>
+              <section class="panel" id="agents-map"></section>
+            </div>
+          </section>
+
+          <section id="view-alerts" class="view">
+            <div class="view-grid two-up">
+              <section class="panel" id="alerts-list"></section>
+              <section class="panel" id="alerts-monitoring"></section>
+            </div>
+          </section>
+        </main>
+      </div>
     </div>
     <script type="module" src="/app.js"></script>
   </body>
-  </html>
+</html>

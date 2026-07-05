@@ -14,6 +14,7 @@ Build a local-first, single-user, AKIRA multi-agent platform whose first end-to-
 - **Agent Runtime**: Kotlin/Koog-aligned worker layer for bounded execution roles
 - **MCP data plane**: sibling `mcp-server-generic` service for external data/tool access
 - **Observability plane**: structured service logs, Prometheus-style metrics, usage APIs, monitoring digest workflow, and Elastic/collector scaffolding
+- **Model routing plane**: dynamically configurable LLM model selection by URL/auth/credentials plus role, stage, and task-type overrides
 - **Event backbone direction**: JetStream-compatible architecture, with local persistence currently handled by the storage service
 
 ## First workflow
@@ -50,8 +51,9 @@ Build a local-first, single-user, AKIRA multi-agent platform whose first end-to-
 ## Current implementation status
 
 - Composition repo scaffolded
-- Dashboard implemented with browser STT, wake-word parsing, and speech synthesis playback
-- Orchestrator implemented with explicit stage execution, replayable event emission, structured logs, metrics, model-usage APIs, and monitoring digest generation
+- Dashboard implemented as an AKIRA command center with browser STT, wake-word parsing, speech synthesis playback, live podcast playback, and an overview aggregator
+- Orchestrator implemented with explicit stage execution, replayable event emission, structured logs, metrics, model-usage APIs, dashboard overview aggregation, and monitoring digest generation
+- Model routing now flows through a configurable router so model names are not hardcoded in stage execution
 - Storage service implemented with disk-backed tasks, events, artifacts, vector-ish indexing, purge, structured logs, and metrics
 - Kotlin agent runtime scaffolded with health/metrics endpoints and structured-log pattern
 - Compose and Kubernetes starter manifests added

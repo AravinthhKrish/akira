@@ -9,6 +9,7 @@ if str(SERVICE_DIR) not in sys.path:
     sys.path.append(str(SERVICE_DIR))
 
 from mcp_client import MCPClient
+from model_router import ModelRouter, ModelRouterConfig
 from server import TaskManager
 from worker_client import WorkerClient
 
@@ -82,6 +83,51 @@ class MonitoringTaskManager(TestableTaskManager):
 
 
 class TaskManagerTests(unittest.TestCase):
+    def test_dashboard_overview_prioritizes_content_tasks_over_monitoring_tasks(self):
+        storage = MemoryStorage()
+        manager = MonitoringTaskManager(storage, MCPClient(None), WorkerClient(None))
+        storage.upsert_task(
+            "monitor_001",
+            {
+                "taskId": "monitor_001",
+                "runId": "monitor_run_001",
+                "type": "system-monitoring",
+                "topic": "system monitoring podcast",
+                "status": "working",
+                "priority": "normal",
+                "stageIndex": 0,
+                "stage": "collect_monitoring_inputs",
+                "eventSeq": 0,
+                "narrativeSeq": 0,
+                "updatedAt": "2026-07-05T01:30:00+00:00",
+                "artifacts": [],
+            },
+        )
+        storage.upsert_task(
+            "task_001",
+            {
+                "taskId": "task_001",
+                "runId": "run_001",
+                "type": "news-podcast",
+                "topic": "AKIRA launch plan",
+                "status": "working",
+                "priority": "normal",
+                "stageIndex": 3,
+                "stage": "draft_structure",
+                "eventSeq": 0,
+                "narrativeSeq": 0,
+                "updatedAt": "2026-07-05T01:31:00+00:00",
+                "artifacts": [],
+            },
+        )
+
+        overview = manager.get_dashboard_overview()
+
+        self.assertEqual(overview["cards"][1]["value"], 1)
+        self.assertEqual(overview["hero"]["task"]["taskId"], "task_001")
+        self.assertEqual([task["taskId"] for task in overview["tasks"]], ["task_001"])
+        self.assertTrue(all(task["type"] != "system-monitoring" for task in overview["tasks"]))
+
     def test_run_task_produces_script_package(self):
         storage = MemoryStorage()
         manager = TestableTaskManager(storage, MCPClient(None), WorkerClient(None))
@@ -93,6 +139,25 @@ class TaskManagerTests(unittest.TestCase):
         artifact = storage.list_artifacts(task["taskId"])[0]
         self.assertTrue(artifact["scriptSections"])
         self.assertGreaterEqual(len(storage.get_events(task["taskId"])), 8)
+
+    def test_run_task_uses_dynamic_model_router_configuration(self):
+        storage = MemoryStorage()
+        router = ModelRouter(
+            ModelRouterConfig(
+                default_model="gpt-default",
+                role_models={"draft_script": "gpt-role-script"},
+                stage_models={"validate_citations": "gpt-stage-validation"},
+            )
+        )
+        manager = TestableTaskManager(storage, MCPClient(None), WorkerClient(None), model_router=router)
+        task = manager.create_task("agent podcast")
+        manager._run_task(task["taskId"])
+        completed = storage.get_task(task["taskId"])
+        self.assertEqual(completed["modelRouting"]["generate_script"]["model"], "gpt-role-script")
+        self.assertEqual(completed["modelRouting"]["validate_citations"]["model"], "gpt-stage-validation")
+        models = manager.usage_tracker.by_model(15)["models"]
+        self.assertIn("gpt-role-script", models)
+        self.assertIn("gpt-stage-validation", models)
 
     def test_generate_monitoring_digest_creates_audio_first_artifact(self):
         storage = MemoryStorage()

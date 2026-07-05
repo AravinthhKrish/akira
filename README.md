@@ -20,6 +20,7 @@ This repository is the composition repo for a local-first, single-user multi-age
   - structured JSON service logs
   - Prometheus-style metrics endpoint
   - model-usage summary APIs
+  - dynamic model router with URL/auth/credentials and per-role mapping
   - scheduled monitoring podcast digest generation
   - Elastic-preferred log reading with local log-mirror fallback
   - generated playable monitoring audio payloads
@@ -103,3 +104,4 @@ Then open [http://localhost:3000](http://localhost:3000).
 - `api-chat-app` informed the orchestration shape, but this repo is not tied to its domain model.
 - The event model is JetStream-ready, but the runnable local slice persists canonical events through `storagemcp-platform` so the repo works without additional client libraries.
 - Structured service logs also mirror locally under `data/observability/logs` so the monitoring digest workflow can read them in local-first mode before a full Elastic stack is running.
+- Dynamic model routing is controlled by the orchestrator through `/v1/model-router` and `MODEL_ROUTER_*` environment variables when you want to point AKIRA at a real router endpoint with auth.
