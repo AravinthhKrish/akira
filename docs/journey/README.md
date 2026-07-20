@@ -14,13 +14,15 @@ docs/journey/
 │   └── 2026-07-05-local-verification.md
 │   └── 2026-07-05-akira-command-center.md
 │   └── 2026-07-05-model-router-config.md
+│   └── 2026-07-20-k8s-dependency-config.md
 └── layers/
     ├── dashboard.md
     ├── orchestrator.md
     ├── storage-mcp-platform.md
     ├── agent-runtime.md
     ├── contracts-and-events.md
-    └── deployment-and-ops.md
+    ├── deployment-and-ops.md
+    └── kubernetes-dependencies-and-config.md
 ```
 
 ## How to use this

@@ -1,6 +1,6 @@
 # Deployment and Ops Subplan
 
-Last updated: 2026-07-05
+Last updated: 2026-07-20
 
 ## Purpose
 
@@ -19,6 +19,7 @@ The ops layer makes the platform runnable locally today while keeping a clear pa
 - `docker-compose.yml` for local composition
 - service Dockerfiles for dashboard, orchestrator, storage, and agent runtime
 - Kubernetes starter manifests for dashboard, orchestrator, storage, and NATS
+- Kubernetes dependency and config matrix in `docs/journey/layers/kubernetes-dependencies-and-config.md`
 - `scripts/smoke.mjs` for end-to-end health and task smoke flow
 - `ops/observability/` for Prometheus scrape config and collector-to-Elastic scaffolding
 - shared local observability log mirror mounted through compose
