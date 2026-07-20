@@ -16,6 +16,7 @@ Build a local-first, single-user, AKIRA multi-agent platform whose first end-to-
 - **Observability plane**: structured service logs, Prometheus-style metrics, usage APIs, monitoring digest workflow, and Elastic/collector scaffolding
 - **Model routing plane**: dynamically configurable LLM model selection by URL/auth/credentials plus role, stage, and task-type overrides
 - **Event backbone direction**: JetStream-compatible architecture, with local persistence currently handled by the storage service
+- **Contextual news plane**: task-scoped news profiles and recurring refreshes that expand into MCP search text while preserving replayable machine truth
 
 ## First workflow
 
@@ -54,6 +55,7 @@ Build a local-first, single-user, AKIRA multi-agent platform whose first end-to-
 - Dashboard implemented as an AKIRA command center with browser STT, wake-word parsing, speech synthesis playback, live podcast playback, and an overview aggregator
 - Orchestrator implemented with explicit stage execution, replayable event emission, structured logs, metrics, model-usage APIs, dashboard overview aggregation, and monitoring digest generation
 - Model routing now flows through a configurable router so model names are not hardcoded in stage execution
+- News tasks now carry reusable context/schedule snapshots, with the orchestrator expanding them into MCP search text and replayable refresh events
 - Storage service implemented with disk-backed tasks, events, artifacts, vector-ish indexing, purge, structured logs, and metrics
 - Kotlin agent runtime scaffolded with health/metrics endpoints and structured-log pattern
 - Compose and Kubernetes starter manifests added
@@ -67,3 +69,4 @@ Build a local-first, single-user, AKIRA multi-agent platform whose first end-to-
 - improve artifact quality and structured citation rendering
 - add stronger recovery and auth
 - replace local log-mirror monitoring reads with a real Elastic-backed observability read path
+- graduate the news-context form into a first-class saved profile system

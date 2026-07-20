@@ -179,6 +179,69 @@
         </main>
       </div>
     </div>
+    <div id="news-task-modal" class="modal-shell" aria-hidden="true">
+      <div class="modal-backdrop" data-close-task-modal></div>
+      <section class="modal-sheet panel" role="dialog" aria-modal="true" aria-labelledby="news-task-title">
+        <div class="panel-header">
+          <div>
+            <h3 class="panel-title" id="news-task-title">News profile</h3>
+            <p class="panel-note">Create a contextual news task with a reusable search profile and refresh period.</p>
+          </div>
+          <button type="button" class="icon-action modal-close" data-close-task-modal aria-label="Close news profile">
+            <span aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 6 18 18"></path>
+                <path d="M18 6 6 18"></path>
+              </svg>
+            </span>
+          </button>
+        </div>
+        <form id="news-task-form" class="news-task-form">
+          <label class="field">
+            <span class="field-label">Topic</span>
+            <input name="topic" type="text" autocomplete="off" required>
+          </label>
+          <div class="field-grid">
+            <label class="field">
+              <span class="field-label">Focus keywords</span>
+              <textarea name="focusKeywords" rows="3" placeholder="agents, orchestration, voice"></textarea>
+            </label>
+            <label class="field">
+              <span class="field-label">Entities</span>
+              <textarea name="entities" rows="3" placeholder="companies, products, people"></textarea>
+            </label>
+          </div>
+          <div class="field-grid">
+            <label class="field">
+              <span class="field-label">Exclusions</span>
+              <textarea name="exclusions" rows="3" placeholder="marketing, rumors"></textarea>
+            </label>
+            <label class="field">
+              <span class="field-label">Source preferences</span>
+              <textarea name="sourcePreferences" rows="3" placeholder="official docs, product blogs, reputable news"></textarea>
+            </label>
+          </div>
+          <div class="field-grid compact">
+            <label class="field">
+              <span class="field-label">Freshness window (minutes)</span>
+              <input name="freshnessWindowMinutes" type="number" min="15" step="15" value="240">
+            </label>
+            <label class="field">
+              <span class="field-label">Refresh period (minutes)</span>
+              <input name="refreshEveryMinutes" type="number" min="15" step="15" value="60">
+            </label>
+          </div>
+          <label class="toggle-row">
+            <input name="scheduleEnabled" type="checkbox" checked>
+            <span>Keep refreshing on this schedule</span>
+          </label>
+          <div class="form-actions">
+            <button type="button" class="hero-chip" data-close-task-modal>Cancel</button>
+            <button type="submit" class="primary-action">Start news task</button>
+          </div>
+        </form>
+      </section>
+    </div>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

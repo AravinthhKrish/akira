@@ -31,6 +31,9 @@ The dashboard is the human control surface for the platform. It should make the 
 - AKIRA command-center shell with summary cards, task browser, podcast hero, agents, and alerts views
 - `/api/dashboard/overview` wiring to the orchestrator aggregation endpoint
 - live progress controls for new task, summary, replay, voice, and audio toggle actions
+- news task composer now captures a reusable profile with topic, keywords, exclusions, entities, source preferences, freshness, and recurring refresh period
+- task detail panels render the persisted news profile plus the expanded MCP query used for retrieval
+- the browser bundle is safe to import in tests without auto-bootstrapping the UI
 
 ## Near-term improvements
 
@@ -41,6 +44,7 @@ The dashboard is the human control surface for the platform. It should make the 
 - explicit microphone permission and failure states
 - transport/auth hardening for WebSocket voice sessions
 - richer monitoring digest browsing and playback controls
+- editable saved profiles for reusing and cloning contextual news tasks
 
 ## Guardrails
 

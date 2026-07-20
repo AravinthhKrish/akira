@@ -47,6 +47,9 @@ The orchestrator owns task lifecycle, workflow control, replay coordination, and
 - router config supports URL, auth mode, bearer/basic/header credentials, default model, and per-role/per-stage/task-type mappings
 - `/v1/model-router` exposes the active router config and update hook
 - stage execution records the selected model in usage telemetry instead of relying on hardcoded literals
+- news tasks now persist a reusable `newsContext` profile and recurring `newsSchedule` snapshot on the task
+- source discovery expands that profile into a single MCP text query for `news.search_articles`
+- a background refresh loop re-runs due contextual news tasks and emits replayable machine plus narrative refresh events
 
 ## Near-term improvements
 
@@ -57,6 +60,7 @@ The orchestrator owns task lifecycle, workflow control, replay coordination, and
 - support richer structured trace propagation
 - replace local structured-log reads with Elastic-backed monitoring queries
 - persist router configuration separately if the live update surface becomes a shared operational need
+- promote the news-context profile into a dedicated task editor API once the dashboard form stabilizes
 
 ## Guardrails
 

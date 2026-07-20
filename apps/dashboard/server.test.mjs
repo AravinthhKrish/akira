@@ -92,3 +92,41 @@ test("dashboard shell serves the AKIRA command center layout", async () => {
     server.close();
   }
 });
+
+test("news profile composer payload expands into task context and schedule", async () => {
+  const originalDocument = global.document;
+  global.document = {
+    querySelector() {
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    },
+  };
+
+  try {
+    const { buildNewsTaskPayload } = await import("./public/app.js");
+    const payload = buildNewsTaskPayload(
+      new Map([
+        ["topic", "AKIRA launch"],
+        ["focusKeywords", "voice, orchestration"],
+        ["exclusions", "rumors"],
+        ["entities", "AKIRA, MCP"],
+        ["sourcePreferences", "official docs, reputable news"],
+        ["freshnessWindowMinutes", "180"],
+        ["refreshEveryMinutes", "45"],
+        ["scheduleEnabled", "on"],
+      ])
+    );
+
+    assert.equal(payload.type, "news-podcast");
+    assert.equal(payload.topic, "AKIRA launch");
+    assert.deepEqual(payload.newsContext.focusKeywords, ["voice", "orchestration"]);
+    assert.deepEqual(payload.newsContext.entities, ["AKIRA", "MCP"]);
+    assert.equal(payload.newsContext.freshnessWindowMinutes, 180);
+    assert.equal(payload.newsSchedule.enabled, true);
+    assert.equal(payload.newsSchedule.refreshEveryMinutes, 45);
+  } finally {
+    global.document = originalDocument;
+  }
+});

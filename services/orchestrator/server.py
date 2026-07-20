@@ -48,6 +48,128 @@ def parse_window_minutes(value: str | None, default: int = 15) -> int:
         return default
 
 
+def _parse_minutes_value(value, default: int = 0, minimum: int = 0) -> int:
+    if value is None:
+        return default
+    normalized = str(value).strip().lower()
+    if not normalized:
+        return default
+    if normalized.endswith("m"):
+        normalized = normalized[:-1]
+    try:
+        return max(minimum, int(normalized))
+    except ValueError:
+        return default
+
+
+def _coerce_bool(value, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _split_terms(value) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        raw_items = value
+    else:
+        raw_items = str(value).replace("\n", ",").split(",")
+    items = []
+    for item in raw_items:
+        normalized = str(item).strip()
+        if normalized:
+            items.append(normalized)
+    return items
+
+
+def _parse_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    normalized = str(value).strip()
+    if not normalized:
+        return None
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def normalize_news_context(topic: str, payload: dict | None = None) -> dict:
+    payload = payload if isinstance(payload, dict) else {}
+    freshness = payload.get("freshnessWindowMinutes")
+    if freshness is None:
+        freshness = payload.get("freshnessMinutes")
+    freshness_minutes = _parse_minutes_value(freshness, 240, 1) if freshness not in {None, ""} else 240
+    return {
+        "topic": str(payload.get("topic") or topic or "").strip(),
+        "focusKeywords": _split_terms(payload.get("focusKeywords") or payload.get("keywords")),
+        "exclusions": _split_terms(payload.get("exclusions") or payload.get("exclude")),
+        "entities": _split_terms(payload.get("entities")),
+        "sourcePreferences": _split_terms(payload.get("sourcePreferences") or payload.get("preferredSources")),
+        "freshnessWindowMinutes": freshness_minutes,
+    }
+
+
+def normalize_news_schedule(payload: dict | None = None, *, now: datetime | None = None) -> dict:
+    payload = payload if isinstance(payload, dict) else {}
+    refresh_minutes = payload.get("refreshEveryMinutes")
+    if refresh_minutes is None:
+        refresh_minutes = payload.get("periodMinutes")
+    parsed_minutes = _parse_minutes_value(refresh_minutes, 0, 0) if refresh_minutes not in {None, ""} else 0
+    enabled = _coerce_bool(payload.get("enabled"), parsed_minutes > 0)
+    if enabled and parsed_minutes <= 0:
+        parsed_minutes = 60
+    schedule = {
+        "enabled": enabled,
+        "refreshEveryMinutes": parsed_minutes,
+        "nextRefreshAt": payload.get("nextRefreshAt"),
+        "lastRefreshAt": payload.get("lastRefreshAt"),
+        "refreshCount": int(payload.get("refreshCount") or 0),
+    }
+    if not enabled:
+        schedule["nextRefreshAt"] = None
+    elif now is not None and not schedule["nextRefreshAt"] and parsed_minutes > 0:
+        schedule["nextRefreshAt"] = (now + timedelta(minutes=parsed_minutes)).isoformat()
+    return schedule
+
+
+def build_news_search_query(task: dict) -> str:
+    context = task.get("newsContext") or {}
+    topic = str(context.get("topic") or task.get("topic") or "").strip()
+    focus = _split_terms(context.get("focusKeywords"))
+    exclusions = _split_terms(context.get("exclusions"))
+    entities = _split_terms(context.get("entities"))
+    source_preferences = _split_terms(context.get("sourcePreferences"))
+    freshness = int(context.get("freshnessWindowMinutes") or 0)
+    parts = []
+    if topic:
+        parts.append(f"Recent news about {topic}")
+    if focus:
+        parts.append(f"focus on {', '.join(focus)}")
+    if entities:
+        parts.append(f"cover entities {', '.join(entities)}")
+    if source_preferences:
+        parts.append(f"prefer sources {', '.join(source_preferences)}")
+    if exclusions:
+        parts.append(f"exclude {', '.join(exclusions)}")
+    if freshness > 0:
+        parts.append(f"freshness window last {freshness} minutes")
+    return ". ".join(parts) if parts else topic
+
+
 class TaskManager:
     def __init__(
         self,
@@ -82,6 +204,8 @@ class TaskManager:
         self.monitor_window_minutes = parse_window_minutes(os.environ.get("MONITOR_WINDOW_MINUTES"), 15)
         self.monitor_interval_seconds = int(os.environ.get("MONITOR_INTERVAL_SECONDS", str(self.monitor_window_minutes * 60)))
         self.monitoring_enabled = os.environ.get("MONITORING_SCHEDULER_ENABLED", "true").lower() != "false"
+        self.news_scheduler_enabled = os.environ.get("NEWS_REFRESH_SCHEDULER_ENABLED", "true").lower() != "false"
+        self.news_refresh_poll_seconds = max(5, int(os.environ.get("NEWS_REFRESH_POLL_SECONDS", "30")))
         self.monitor_service_urls = service_urls or {
             "dashboard": os.environ.get("DASHBOARD_URL", "http://127.0.0.1:3000"),
             "storage": os.environ.get("STORAGE_URL", "http://127.0.0.1:9100"),
@@ -89,6 +213,7 @@ class TaskManager:
             "agent-runtime": os.environ.get("AGENT_RUNTIME_URL", "http://127.0.0.1:8081"),
         }
         self.monitor_thread: threading.Thread | None = None
+        self.news_thread: threading.Thread | None = None
 
     def bootstrap(self):
         try:
@@ -102,6 +227,8 @@ class TaskManager:
                 self._spawn(task["taskId"], resume=True)
         if self.monitoring_enabled:
             self._spawn_monitor_scheduler()
+        if self.news_scheduler_enabled:
+            self._spawn_news_scheduler()
         self.logger.log(
             "INFO",
             "TaskManager",
@@ -110,9 +237,18 @@ class TaskManager:
             thread_name="orchestrator.bootstrap",
         )
 
-    def create_task(self, topic: str, task_type: str = "news-podcast") -> dict:
+    def create_task(
+        self,
+        topic: str,
+        task_type: str = "news-podcast",
+        news_context: dict | None = None,
+        news_schedule: dict | None = None,
+    ) -> dict:
         task_id = f"task_{uuid.uuid4().hex[:8]}"
         run_id = f"run_{uuid.uuid4().hex[:8]}"
+        now = utc_now()
+        context = normalize_news_context(topic, news_context)
+        schedule = normalize_news_schedule(news_schedule, now=now)
         task = {
             "taskId": task_id,
             "runId": run_id,
@@ -132,6 +268,9 @@ class TaskManager:
             "clusters": [],
             "structure": {},
             "scriptPackage": {},
+            "newsContext": context,
+            "newsSchedule": schedule,
+            "newsQuery": "",
             "control": {
                 "pause": False,
                 "interrupt": False,
@@ -139,6 +278,10 @@ class TaskManager:
             },
             "modelRouting": {},
         }
+        if schedule.get("enabled") and schedule.get("refreshEveryMinutes", 0) <= 0:
+            schedule["refreshEveryMinutes"] = 60
+        if schedule.get("enabled") and not schedule.get("nextRefreshAt") and schedule.get("refreshEveryMinutes", 0) > 0:
+            schedule["nextRefreshAt"] = (now + timedelta(minutes=int(schedule["refreshEveryMinutes"]))).isoformat()
         self.metrics.inc("akira_tasks_created_total", labels={"type": task_type})
         self._save_task(task)
         self.logger.log(
@@ -696,6 +839,95 @@ class TaskManager:
         self.monitor_thread = threading.Thread(target=scheduler, daemon=True, name="monitoring-scheduler")
         self.monitor_thread.start()
 
+    def _spawn_news_scheduler(self):
+        if self.news_thread and self.news_thread.is_alive():
+            return
+
+        def scheduler():
+            while True:
+                time.sleep(self.news_refresh_poll_seconds)
+                try:
+                    self._refresh_due_news_tasks()
+                except Exception as error:
+                    self.logger.log(
+                        "ERROR",
+                        "NewsScheduler",
+                        f"scheduled news refresh failed: {error}",
+                        thread_name="orchestrator.news",
+                        thread_number=4,
+                    )
+
+        self.news_thread = threading.Thread(target=scheduler, daemon=True, name="news-scheduler")
+        self.news_thread.start()
+
+    def _news_schedule_enabled(self, task: dict) -> bool:
+        schedule = task.get("newsSchedule") or {}
+        return (
+            task.get("type") == "news-podcast"
+            and task.get("status") not in {"paused", "interrupted", "failed"}
+            and _coerce_bool(schedule.get("enabled"), False)
+            and int(schedule.get("refreshEveryMinutes") or 0) > 0
+        )
+
+    def _news_refresh_due(self, task: dict, now: datetime | None = None) -> bool:
+        if not self._news_schedule_enabled(task):
+            return False
+        schedule = task.get("newsSchedule") or {}
+        interval = int(schedule.get("refreshEveryMinutes") or 0)
+        if interval <= 0:
+            return False
+        now = now or utc_now()
+        next_refresh = _parse_datetime(schedule.get("nextRefreshAt"))
+        if next_refresh is None:
+            baseline = _parse_datetime(schedule.get("lastRefreshAt")) or _parse_datetime(task.get("updatedAt")) or now
+            next_refresh = baseline + timedelta(minutes=interval)
+        return now >= next_refresh
+
+    def _refresh_due_news_tasks(self):
+        try:
+            tasks = self.storage.list_tasks()
+        except Exception:
+            tasks = list(self.tasks.values())
+        now = utc_now()
+        due_tasks = [
+            task for task in tasks
+            if task.get("type") == "news-podcast" and self._news_refresh_due(task, now)
+        ]
+        for task in due_tasks:
+            thread = self.threads.get(task["taskId"])
+            if thread and thread.is_alive():
+                continue
+            self._refresh_news_task(task["taskId"], triggered_by="scheduled")
+
+    def _refresh_news_task(self, task_id: str, triggered_by: str = "scheduled"):
+        with self.lock:
+            task = self.storage.get_task(task_id)
+            if not task or not self._news_schedule_enabled(task):
+                return
+            schedule = dict(task.get("newsSchedule") or {})
+            schedule["refreshCount"] = int(schedule.get("refreshCount") or 0) + 1
+            schedule["lastRefreshAt"] = now_iso()
+            task["newsSchedule"] = schedule
+            task["status"] = "working"
+            task["stageIndex"] = 1 if len(STAGES) > 1 else 0
+            task["stage"] = STAGES[task["stageIndex"]].name
+            task["sources"] = []
+            task["rankedSources"] = []
+            task["clusters"] = []
+            task["structure"] = {}
+            task["scriptPackage"] = {}
+            task["newsQuery"] = ""
+            self._save_task(task)
+        self.emit_narrative_event(task, f"{triggered_by.title()} news refresh armed from saved context.")
+        self.emit_machine_event(
+            task,
+            "TASK_STATE_WORKING",
+            task_progress(task),
+            f"{triggered_by.title()} news refresh armed",
+            task["stage"],
+        )
+        self._spawn(task_id)
+
     def _wait_if_paused(self, task: dict):
         while task["control"].get("pause"):
             self._save_task(task)
@@ -752,7 +984,10 @@ class TaskManager:
                     self.emit_narrative_event(task, f"Starting work on the topic '{task['topic']}'.")
 
                 elif stage.name == "retrieve_sources":
-                    result = self.mcp.search_news(task["topic"], limit=6)
+                    query_text = build_news_search_query(task)
+                    task["newsQuery"] = query_text
+                    self._save_task(task)
+                    result = self.mcp.search_news(query_text, limit=6)
                     sources = self.workers.execute(stage.role, {"sources": result["articles"]})["sources"]
                     task["sources"] = sources
                     self.storage.upsert_vectors(
@@ -766,7 +1001,7 @@ class TaskManager:
                             for source in sources
                         ],
                     )
-                    self.emit_narrative_event(task, f"Retrieved {len(sources)} candidate sources.")
+                    self.emit_narrative_event(task, f"Retrieved {len(sources)} candidate sources from the saved news context.")
 
                 elif stage.name == "normalize_dedupe":
                     normalized = self.workers.execute(stage.role, {"sources": task["sources"]})
@@ -837,6 +1072,7 @@ class TaskManager:
 
                 elif stage.name == "publish_artifact_package":
                     show_notes = self.workers.execute(stage.role, {"sources": task["sources"]})
+                    artifact_id = f"script-package-{int(time.time() * 1000)}"
                     artifact = {
                         "type": "script-package",
                         "topic": task["topic"],
@@ -848,8 +1084,8 @@ class TaskManager:
                         "clusters": task["clusters"],
                         "generatedAt": now_iso(),
                     }
-                    saved = self.storage.save_artifact(task["taskId"], "script-package", artifact)
-                    task["artifacts"] = [saved]
+                    saved = self.storage.save_artifact(task["taskId"], artifact_id, artifact)
+                    task["artifacts"] = self.storage.list_artifacts(task["taskId"])
                     self.emit_narrative_event(task, "Published the script package artifact.")
                     self.emit_machine_event(
                         task,
@@ -864,11 +1100,22 @@ class TaskManager:
                 self._save_task(task)
                 time.sleep(0.6)
 
-            task["status"] = "completed"
-            self._save_task(task)
-            self.metrics.inc("akira_tasks_completed_total", labels={"type": task.get("type", "news-podcast")})
-            self.emit_machine_event(task, "TASK_STATE_COMPLETED", 100, "Task completed", task["stage"])
-            self.emit_narrative_event(task, "The podcast digest package is ready for review.")
+            if self._news_schedule_enabled(task):
+                schedule = dict(task.get("newsSchedule") or {})
+                interval = max(1, int(schedule.get("refreshEveryMinutes") or 0))
+                schedule["lastRefreshAt"] = now_iso()
+                schedule["nextRefreshAt"] = (utc_now() + timedelta(minutes=interval)).isoformat()
+                task["newsSchedule"] = schedule
+                task["status"] = "working"
+                self._save_task(task)
+                self.emit_machine_event(task, "TASK_STATE_WORKING", 100, "News task ready for scheduled refresh", task["stage"])
+                self.emit_narrative_event(task, f"The latest digest is ready. Next contextual refresh in {interval} minutes.")
+            else:
+                task["status"] = "completed"
+                self._save_task(task)
+                self.metrics.inc("akira_tasks_completed_total", labels={"type": task.get("type", "news-podcast")})
+                self.emit_machine_event(task, "TASK_STATE_COMPLETED", 100, "Task completed", task["stage"])
+                self.emit_narrative_event(task, "The podcast digest package is ready for review.")
         except Exception as error:
             task["status"] = "failed"
             task["error"] = str(error)
@@ -1255,7 +1502,12 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
                 topic = body.get("topic", "").strip()
                 if not topic:
                     return self._json(400, {"error": "topic is required"})
-                task = self.manager.create_task(topic)
+                task = self.manager.create_task(
+                    topic,
+                    body.get("type", "news-podcast"),
+                    body.get("newsContext") if isinstance(body.get("newsContext"), dict) else None,
+                    body.get("newsSchedule") if isinstance(body.get("newsSchedule"), dict) else None,
+                )
                 return self._json(201, task)
 
             if parsed.path == "/v1/monitoring/digests/run":

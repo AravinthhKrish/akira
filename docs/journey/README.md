@@ -15,6 +15,7 @@ docs/journey/
 │   └── 2026-07-05-akira-command-center.md
 │   └── 2026-07-05-model-router-config.md
 │   └── 2026-07-20-k8s-dependency-config.md
+│   └── 2026-07-20-news-context-recurring-search.md
 └── layers/
     ├── dashboard.md
     ├── orchestrator.md

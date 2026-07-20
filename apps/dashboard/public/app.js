@@ -14,6 +14,7 @@ const state = {
   voiceEnabled: false,
   audioEnabled: true,
   eventSource: null,
+  newsComposerOpen: false,
 };
 
 const els = {
@@ -41,6 +42,9 @@ const els = {
   audioToggle: document.querySelector("#audio-toggle"),
   connectionBadge: document.querySelector("#connection-badge"),
   voiceBadge: document.querySelector("#voice-badge"),
+  newsTaskModal: document.querySelector("#news-task-modal"),
+  newsTaskForm: document.querySelector("#news-task-form"),
+  newsTaskCloseButtons: Array.from(document.querySelectorAll("[data-close-task-modal]")),
   navItems: Array.from(document.querySelectorAll(".nav-item")),
   views: Array.from(document.querySelectorAll(".view")),
 };
@@ -105,6 +109,58 @@ function api(path, options = {}) {
   });
 }
 
+function readSourceValue(source, name) {
+  if (!source) return "";
+  if (typeof source.get === "function") {
+    const value = source.get(name);
+    return value == null ? "" : String(value);
+  }
+  if (Object.prototype.hasOwnProperty.call(source, name)) {
+    const value = source[name];
+    return value == null ? "" : String(value);
+  }
+  return "";
+}
+
+function splitProfileList(value) {
+  return String(value || "")
+    .replace(/\n/g, ",")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parsePositiveMinutes(value, fallback = 0) {
+  const normalized = Number.parseInt(String(value || "").trim(), 10);
+  if (Number.isNaN(normalized) || normalized < 0) {
+    return fallback;
+  }
+  return normalized;
+}
+
+export function buildNewsTaskPayload(source) {
+  const topic = readSourceValue(source, "topic").trim();
+  const freshnessWindowMinutes = parsePositiveMinutes(readSourceValue(source, "freshnessWindowMinutes"), 240) || 240;
+  const refreshEveryMinutes = parsePositiveMinutes(readSourceValue(source, "refreshEveryMinutes"), 0);
+  const scheduleEnabled = readSourceValue(source, "scheduleEnabled") === "on" || readSourceValue(source, "scheduleEnabled") === "true" || refreshEveryMinutes > 0;
+  return {
+    type: "news-podcast",
+    topic,
+    newsContext: {
+      topic,
+      focusKeywords: splitProfileList(readSourceValue(source, "focusKeywords")),
+      exclusions: splitProfileList(readSourceValue(source, "exclusions")),
+      entities: splitProfileList(readSourceValue(source, "entities")),
+      sourcePreferences: splitProfileList(readSourceValue(source, "sourcePreferences")),
+      freshnessWindowMinutes,
+    },
+    newsSchedule: {
+      enabled: scheduleEnabled,
+      refreshEveryMinutes: scheduleEnabled ? (refreshEveryMinutes || 60) : 0,
+    },
+  };
+}
+
 function progressClass(value) {
   if (value >= 90) return "green";
   if (value >= 70) return "blue";
@@ -148,7 +204,8 @@ function selectedTaskEvents() {
 }
 
 function selectedTaskArtifact(task) {
-  const item = task?.artifacts?.[0];
+  const artifacts = task?.artifacts || [];
+  const item = artifacts[artifacts.length - 1];
   return item || null;
 }
 
@@ -166,6 +223,73 @@ function activeTranscriptLine() {
   const events = selectedTaskEvents();
   const narrative = [...events].reverse().find((event) => event?.data?.audience === "narrative");
   return narrative?.data?.message || state.dashboard?.hero?.speaker || "Narration standing by";
+}
+
+function renderTagList(items = []) {
+  return items
+    .map((item) => `<span class="tag-chip">${escapeHtml(item)}</span>`)
+    .join("");
+}
+
+function renderNewsProfile(task) {
+  const context = task?.newsContext || {};
+  const schedule = task?.newsSchedule || {};
+  const query = task?.newsQuery || "";
+  const contextItems = [
+    {
+      label: "Topic",
+      value: context.topic || task?.topic || "Unspecified",
+    },
+    {
+      label: "Freshness",
+      value: context.freshnessWindowMinutes ? `${context.freshnessWindowMinutes} minutes` : "Default",
+    },
+    {
+      label: "Schedule",
+      value: schedule.enabled ? `Every ${schedule.refreshEveryMinutes || 60} minutes` : "One-time",
+    },
+    {
+      label: "Refreshes",
+      value: schedule.refreshCount ? String(schedule.refreshCount) : "0",
+    },
+  ];
+  return `
+    <div class="news-profile">
+      <div class="panel-subtitle">News profile</div>
+      <div class="news-profile-grid">
+        ${contextItems
+          .map(
+            (item) => `
+              <div class="metric-box">
+                <div class="metric-label">${escapeHtml(item.label)}</div>
+                <div class="metric-value">${escapeHtml(item.value)}</div>
+              </div>`
+          )
+          .join("")}
+      </div>
+      <div class="news-profile-tags">
+        <div class="tag-group">
+          <div class="tag-group-label">Keywords</div>
+          <div class="tag-list">${renderTagList(context.focusKeywords || []) || `<span class="section-note">No focus keywords</span>`}</div>
+        </div>
+        <div class="tag-group">
+          <div class="tag-group-label">Entities</div>
+          <div class="tag-list">${renderTagList(context.entities || []) || `<span class="section-note">No entities</span>`}</div>
+        </div>
+        <div class="tag-group">
+          <div class="tag-group-label">Exclusions</div>
+          <div class="tag-list">${renderTagList(context.exclusions || []) || `<span class="section-note">None</span>`}</div>
+        </div>
+        <div class="tag-group">
+          <div class="tag-group-label">Source preferences</div>
+          <div class="tag-list">${renderTagList(context.sourcePreferences || []) || `<span class="section-note">No preferences</span>`}</div>
+        </div>
+      </div>
+      <div class="news-query">
+        <div class="tag-group-label">Expanded MCP query</div>
+        <div class="query-copy">${escapeHtml(query || "Will be built from the task context at run time.")}</div>
+      </div>
+    </div>`;
 }
 
 function renderSummaryCards(cards = []) {
@@ -466,7 +590,10 @@ function renderTasksView() {
             <button class="compact-item task-item ${item.taskId === state.selectedTaskId ? "selected" : ""}" data-task-id="${escapeHtml(item.taskId)}">
               <div>
                 <div class="name">${escapeHtml(item.topic || item.taskId)}</div>
-                <div class="desc">${escapeHtml(item.stage || "unknown stage")} • ${escapeHtml(item.updatedAt ? formatDateTime(item.updatedAt) : "")}</div>
+                <div class="desc">
+                  ${escapeHtml(item.stage || "unknown stage")} • ${escapeHtml(item.updatedAt ? formatDateTime(item.updatedAt) : "")}
+                  ${item.newsSchedule?.enabled ? `• every ${escapeHtml(item.newsSchedule.refreshEveryMinutes || 60)}m` : ""}
+                </div>
               </div>
               <div style="display:grid; gap:8px; min-width:140px; justify-items:end;">
                 <div class="status-chip ${escapeHtml(item.status)}">${escapeHtml(item.status)}</div>
@@ -512,6 +639,7 @@ function renderTasksView() {
         <button class="hero-chip" id="task-replay">Load replay</button>
         <button class="hero-chip" id="task-podcast">Open podcast</button>
       </div>
+      ${renderNewsProfile(task)}
       <div class="script-view" style="margin-top:14px;">
         ${artifact
           ? (artifact.scriptSections || [])
@@ -797,16 +925,55 @@ async function loadTaskReplay(taskId) {
   renderAll();
 }
 
-async function createTask() {
-  const topic = window.prompt("Topic for the new AKIRA task", "multi agent platform news, voice interfaces, storage mcp, orchestration");
-  if (topic === null) return;
-  const payload = await api("/tasks", {
+function openTaskComposer(prefill = {}) {
+  if (!els.newsTaskModal || !els.newsTaskForm) return;
+  state.newsComposerOpen = true;
+  const topicInput = els.newsTaskForm.querySelector('[name="topic"]');
+  const keywordsInput = els.newsTaskForm.querySelector('[name="focusKeywords"]');
+  const exclusionsInput = els.newsTaskForm.querySelector('[name="exclusions"]');
+  const entitiesInput = els.newsTaskForm.querySelector('[name="entities"]');
+  const sourcePreferencesInput = els.newsTaskForm.querySelector('[name="sourcePreferences"]');
+  const freshnessInput = els.newsTaskForm.querySelector('[name="freshnessWindowMinutes"]');
+  const refreshInput = els.newsTaskForm.querySelector('[name="refreshEveryMinutes"]');
+  const scheduleEnabledInput = els.newsTaskForm.querySelector('[name="scheduleEnabled"]');
+
+  topicInput.value = prefill.topic || "multi agent platform news, voice interfaces, storage mcp, orchestration";
+  keywordsInput.value = prefill.focusKeywords || "agents, orchestration, voice";
+  exclusionsInput.value = prefill.exclusions || "";
+  entitiesInput.value = prefill.entities || "";
+  sourcePreferencesInput.value = prefill.sourcePreferences || "official docs, product updates, reputable news";
+  freshnessInput.value = prefill.freshnessWindowMinutes || 240;
+  refreshInput.value = prefill.refreshEveryMinutes || 60;
+  scheduleEnabledInput.checked = prefill.scheduleEnabled ?? true;
+  els.newsTaskModal.classList.add("open");
+  els.newsTaskModal.setAttribute("aria-hidden", "false");
+  setTimeout(() => topicInput.focus(), 0);
+}
+
+function closeTaskComposer() {
+  if (!els.newsTaskModal) return;
+  state.newsComposerOpen = false;
+  els.newsTaskModal.classList.remove("open");
+  els.newsTaskModal.setAttribute("aria-hidden", "true");
+}
+
+async function submitTaskComposer(event) {
+  event.preventDefault();
+  if (!els.newsTaskForm) return;
+  const payload = buildNewsTaskPayload(new FormData(els.newsTaskForm));
+  if (!payload.topic) return;
+  const created = await api("/tasks", {
     method: "POST",
-    body: JSON.stringify({ topic: topic.trim() }),
+    body: JSON.stringify(payload),
   });
-  state.selectedTaskId = payload.taskId;
+  state.selectedTaskId = created.taskId;
   state.activeView = "podcast";
+  closeTaskComposer();
   await loadDashboard();
+}
+
+async function createTask() {
+  openTaskComposer();
 }
 
 async function taskAction(action, extra = {}) {
@@ -931,6 +1098,20 @@ function bindGlobalListeners() {
   els.runMonitoringDigest.addEventListener("click", () => runMonitoringDigest().catch(console.error));
   els.voiceToggle.addEventListener("click", () => toggleVoice());
   els.audioToggle.addEventListener("click", () => toggleAudio());
+  els.newsTaskForm?.addEventListener("submit", (event) => submitTaskComposer(event).catch(console.error));
+  for (const button of els.newsTaskCloseButtons) {
+    button.addEventListener("click", () => closeTaskComposer());
+  }
+  els.newsTaskModal?.addEventListener("click", (event) => {
+    if (event.target === els.newsTaskModal || event.target.closest("[data-close-task-modal]")) {
+      closeTaskComposer();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.newsComposerOpen) {
+      closeTaskComposer();
+    }
+  });
 
   els.tasksList.addEventListener("click", (event) => {
     const item = event.target.closest("[data-task-id]");
@@ -1000,4 +1181,6 @@ export function interpretCommand(text) {
   return { action: "summary" };
 }
 
-bootstrap();
+if (typeof window !== "undefined" && typeof document !== "undefined") {
+  bootstrap();
+}

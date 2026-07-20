@@ -1,16 +1,23 @@
 import sys
 import time
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 CURRENT_DIR = Path(__file__).resolve().parent
 SERVICE_DIR = CURRENT_DIR.parent
 if str(SERVICE_DIR) not in sys.path:
     sys.path.append(str(SERVICE_DIR))
 
-from mcp_client import MCPClient
+import server
+from mcp_client import MCPClient, fallback_articles
 from model_router import ModelRouter, ModelRouterConfig
-from server import TaskManager
+from server import (
+    TaskManager,
+    build_news_search_query,
+    normalize_news_schedule,
+)
 from worker_client import WorkerClient
 
 
@@ -55,9 +62,27 @@ class MemoryStorage:
         return {"namespace": namespace, "count": len(items)}
 
 
+class RecordingMCPClient(MCPClient):
+    def __init__(self):
+        super().__init__(None)
+        self.queries = []
+
+    def search_news(self, topic: str, limit: int = 6) -> dict:
+        self.queries.append({"topic": topic, "limit": limit})
+        return {
+            "articles": fallback_articles(topic)[:limit],
+            "freshness": "recorded-local",
+        }
+
+
 class TestableTaskManager(TaskManager):
     def _spawn(self, task_id: str, resume: bool = False):
         return None
+
+
+class SyncTaskManager(TestableTaskManager):
+    def _spawn(self, task_id: str, resume: bool = False):
+        self._run_task(task_id, resume=resume)
 
 
 class MonitoringTaskManager(TestableTaskManager):
@@ -131,8 +156,9 @@ class TaskManagerTests(unittest.TestCase):
     def test_run_task_produces_script_package(self):
         storage = MemoryStorage()
         manager = TestableTaskManager(storage, MCPClient(None), WorkerClient(None))
-        task = manager.create_task("agent podcast")
-        manager._run_task(task["taskId"])
+        with patch.object(server.time, "sleep", lambda *_args, **_kwargs: None):
+            task = manager.create_task("agent podcast")
+            manager._run_task(task["taskId"])
         completed = storage.get_task(task["taskId"])
         self.assertEqual(completed["status"], "completed")
         self.assertEqual(len(storage.list_artifacts(task["taskId"])), 1)
@@ -150,14 +176,89 @@ class TaskManagerTests(unittest.TestCase):
             )
         )
         manager = TestableTaskManager(storage, MCPClient(None), WorkerClient(None), model_router=router)
-        task = manager.create_task("agent podcast")
-        manager._run_task(task["taskId"])
+        with patch.object(server.time, "sleep", lambda *_args, **_kwargs: None):
+            task = manager.create_task("agent podcast")
+            manager._run_task(task["taskId"])
         completed = storage.get_task(task["taskId"])
         self.assertEqual(completed["modelRouting"]["generate_script"]["model"], "gpt-role-script")
         self.assertEqual(completed["modelRouting"]["validate_citations"]["model"], "gpt-stage-validation")
         models = manager.usage_tracker.by_model(15)["models"]
         self.assertIn("gpt-role-script", models)
         self.assertIn("gpt-stage-validation", models)
+
+    def test_news_context_builds_expanded_query_and_persists_profile(self):
+        storage = MemoryStorage()
+        mcp = RecordingMCPClient()
+        manager = TestableTaskManager(storage, mcp, WorkerClient(None))
+        news_context = {
+            "topic": "AKIRA launch",
+            "focusKeywords": ["voice", "orchestration"],
+            "exclusions": ["rumors"],
+            "entities": ["AKIRA", "MCP"],
+            "sourcePreferences": ["official docs", "reputable news"],
+            "freshnessWindowMinutes": 180,
+        }
+        news_schedule = {"enabled": True, "refreshEveryMinutes": 45}
+
+        with patch.object(server.time, "sleep", lambda *_args, **_kwargs: None):
+            task = manager.create_task("AKIRA launch", news_context=news_context, news_schedule=news_schedule)
+            manager._run_task(task["taskId"])
+
+        stored = storage.get_task(task["taskId"])
+        expected_query = build_news_search_query(stored)
+
+        self.assertEqual(stored["newsContext"]["topic"], "AKIRA launch")
+        self.assertEqual(stored["newsContext"]["freshnessWindowMinutes"], 180)
+        self.assertEqual(stored["newsSchedule"]["refreshEveryMinutes"], 45)
+        self.assertTrue(stored["newsSchedule"]["enabled"])
+        self.assertEqual(stored["newsQuery"], expected_query)
+        self.assertTrue(mcp.queries)
+        self.assertEqual(mcp.queries[0]["topic"], expected_query)
+        self.assertIn("focus on voice, orchestration", expected_query)
+        self.assertIn("cover entities AKIRA, MCP", expected_query)
+        self.assertIn("exclude rumors", expected_query)
+        self.assertIn("prefer sources official docs, reputable news", expected_query)
+        self.assertIn("freshness window last 180 minutes", expected_query)
+
+    def test_normalize_news_schedule_defaults_and_zero_values(self):
+        now = datetime(2026, 7, 20, tzinfo=timezone.utc)
+        schedule = normalize_news_schedule({"enabled": True, "refreshEveryMinutes": "0"}, now=now)
+        disabled = normalize_news_schedule({"enabled": "false", "refreshEveryMinutes": "30"}, now=now)
+
+        self.assertTrue(schedule["enabled"])
+        self.assertEqual(schedule["refreshEveryMinutes"], 60)
+        self.assertEqual(schedule["nextRefreshAt"], "2026-07-20T01:00:00+00:00")
+        self.assertFalse(disabled["enabled"])
+        self.assertIsNone(disabled["nextRefreshAt"])
+
+    def test_scheduled_refresh_replays_context_refresh_events(self):
+        storage = MemoryStorage()
+        mcp = RecordingMCPClient()
+        manager = SyncTaskManager(storage, mcp, WorkerClient(None))
+
+        with patch.object(server.time, "sleep", lambda *_args, **_kwargs: None):
+            task = manager.create_task(
+                "AKIRA agent podcast",
+                news_context={"topic": "AKIRA agent podcast", "focusKeywords": ["voice"]},
+                news_schedule={"enabled": True, "refreshEveryMinutes": 15},
+            )
+
+        refreshed = storage.get_task(task["taskId"])
+        refreshed["newsSchedule"]["nextRefreshAt"] = "2026-07-19T23:00:00+00:00"
+        refreshed["updatedAt"] = "2026-07-19T22:00:00+00:00"
+        storage.upsert_task(task["taskId"], refreshed)
+
+        with patch.object(server.time, "sleep", lambda *_args, **_kwargs: None):
+            manager._refresh_due_news_tasks()
+
+        latest = storage.get_task(task["taskId"])
+        replay = manager.get_replay(task["taskId"])
+
+        self.assertEqual(latest["newsSchedule"]["refreshCount"], 1)
+        self.assertTrue(latest["newsSchedule"]["lastRefreshAt"])
+        self.assertGreaterEqual(len(mcp.queries), 2)
+        self.assertTrue(any("refresh armed" in event["data"]["message"] for event in replay))
+        self.assertTrue(any(event["data"]["audience"] == "narrative" for event in replay))
 
     def test_generate_monitoring_digest_creates_audio_first_artifact(self):
         storage = MemoryStorage()
