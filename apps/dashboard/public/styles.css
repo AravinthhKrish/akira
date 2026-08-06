@@ -301,6 +301,16 @@ button {
   border: 1px solid rgba(133, 152, 207, 0.16);
   background: linear-gradient(180deg, rgba(19, 26, 49, 0.96), rgba(11, 16, 31, 0.96));
   box-shadow: var(--shadow);
+  text-align: left;
+  transition: border-color 140ms ease, transform 140ms ease, background 140ms ease;
+}
+
+.summary-card:hover,
+.summary-card:focus-visible {
+  border-color: rgba(155, 120, 255, 0.62);
+  background: linear-gradient(180deg, rgba(25, 33, 60, 0.98), rgba(13, 18, 35, 0.98));
+  transform: translateY(-1px);
+  outline: none;
 }
 
 .summary-card::after {
@@ -335,6 +345,15 @@ button {
   margin-top: 6px;
   color: var(--muted-strong);
   font-size: 0.92rem;
+}
+
+.summary-action {
+  position: absolute;
+  left: 18px;
+  bottom: 14px;
+  color: #cdbdff;
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .panel {
@@ -407,7 +426,8 @@ button {
 }
 
 .field input,
-.field textarea {
+.field textarea,
+.field select {
   width: 100%;
   padding: 12px 14px;
   border-radius: var(--radius);
@@ -418,9 +438,15 @@ button {
 }
 
 .field input:focus,
-.field textarea:focus {
+.field textarea:focus,
+.field select:focus {
   outline: 2px solid rgba(155, 120, 255, 0.28);
   border-color: rgba(155, 120, 255, 0.48);
+}
+
+.model-router-form {
+  display: grid;
+  gap: 14px;
 }
 
 .toggle-row {

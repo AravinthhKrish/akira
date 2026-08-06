@@ -82,6 +82,7 @@ test("dashboard shell serves the AKIRA command center layout", async () => {
     assert.match(homeHtml, /AKIRA Command Center/);
     assert.match(homeHtml, /Podcast/);
     assert.match(homeHtml, /Agents/);
+    assert.match(homeHtml, /Models/);
 
     const overviewResponse = await emitRequest(server, createMockRequest("GET", "/api/dashboard/overview"));
     assert.equal(overviewResponse.statusCode, 200);
@@ -131,6 +132,50 @@ test("news profile composer payload expands into task context and schedule", asy
   }
 });
 
+test("model router composer payload supports agent role mappings and credentials", async () => {
+  const originalDocument = global.document;
+  global.document = {
+    querySelector() {
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    },
+  };
+
+  try {
+    const { buildModelRouterPayload } = await import(`./public/app.js?model-router-test=${Date.now()}`);
+    const payload = buildModelRouterPayload(
+      new Map([
+        ["url", "https://router.local/route"],
+        ["authMode", "bearer"],
+        ["authHeaderName", "Authorization"],
+        ["defaultModel", "gpt-4.1-mini"],
+        ["timeoutSeconds", "20"],
+        ["bearerToken", "secret-token"],
+        ["roleModels", "draft_script=gpt-4.1\ncitation_validator=gpt-4.1-mini # validator"],
+        ["stageModels", "retrieve_sources=gpt-4.1-mini"],
+        ["taskTypeModels", "news-podcast=gpt-4.1"],
+      ])
+    );
+
+    assert.equal(payload.url, "https://router.local/route");
+    assert.equal(payload.authMode, "bearer");
+    assert.equal(payload.defaultModel, "gpt-4.1-mini");
+    assert.equal(payload.timeoutSeconds, 20);
+    assert.equal(payload.credentials.bearerToken, "secret-token");
+    assert.equal(payload.credentials.headerValue, "secret-token");
+    assert.deepEqual(payload.roleModels, {
+      draft_script: "gpt-4.1",
+      citation_validator: "gpt-4.1-mini",
+    });
+    assert.deepEqual(payload.stageModels, { retrieve_sources: "gpt-4.1-mini" });
+    assert.deepEqual(payload.taskTypeModels, { "news-podcast": "gpt-4.1" });
+  } finally {
+    global.document = originalDocument;
+  }
+});
+
 test("dashboard proxy exposes task list replay and interrupt APIs", async () => {
   const server = createDashboardServer({
     orchestratorUrl: "http://mock-orchestrator",
@@ -157,6 +202,18 @@ test("dashboard proxy exposes task list replay and interrupt APIs", async () => 
         headers: { "content-type": "application/json" },
       });
     }
+    if (String(url).endsWith("/v1/model-router")) {
+      return new Response(JSON.stringify({ defaultModel: "gpt-4.1", roleModels: { draft_script: "gpt-4.1" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (String(url).endsWith("/v1/model-router/resolve?role=draft_script")) {
+      return new Response(JSON.stringify({ model: "gpt-4.1", source: "role" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
     throw new Error(`Unexpected fetch: ${url}`);
   };
 
@@ -174,10 +231,19 @@ test("dashboard proxy exposes task list replay and interrupt APIs", async () => 
       createMockRequest("POST", "/api/tasks/task_1/interrupt", [Buffer.from(JSON.stringify({ action: "summary" }))])
     );
     assert.equal(interruptResponse.statusCode, 200);
+    const routerResponse = await emitRequest(
+      server,
+      createMockRequest("POST", "/api/model-router", [Buffer.from(JSON.stringify({ roleModels: { draft_script: "gpt-4.1" } }))])
+    );
+    assert.equal(routerResponse.statusCode, 200);
+    const resolveResponse = await emitRequest(server, createMockRequest("GET", "/api/model-router/resolve?role=draft_script"));
+    assert.equal(resolveResponse.statusCode, 200);
     assert.deepEqual(seen.map((item) => `${item.method} ${new URL(item.url).pathname}`), [
       "GET /v1/tasks",
       "GET /v1/tasks/task_1/replay",
       "POST /v1/tasks/task_1/interrupt",
+      "POST /v1/model-router",
+      "GET /v1/model-router/resolve",
     ]);
   } finally {
     global.fetch = originalFetch;

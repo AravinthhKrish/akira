@@ -37,6 +37,8 @@ const els = {
   taskDetail: document.querySelector("#task-detail"),
   agentsRoster: document.querySelector("#agents-roster"),
   agentsMap: document.querySelector("#agents-map"),
+  modelsRouter: document.querySelector("#models-router"),
+  modelsResolution: document.querySelector("#models-resolution"),
   alertsList: document.querySelector("#alerts-list"),
   alertsMonitoring: document.querySelector("#alerts-monitoring"),
   createTask: document.querySelector("#create-task"),
@@ -61,6 +63,36 @@ const toneClasses = {
   indigo: "tone-violet",
   teal: "tone-blue",
 };
+
+const appViews = ["home", "podcast", "tasks", "agents", "models", "alerts"];
+
+const summaryCardTargets = {
+  activeAgents: "agents",
+  tasksInProgress: "tasks",
+  tasksCompleted: "tasks",
+  alerts: "alerts",
+};
+
+const roleModelOptions = [
+  ["source_discovery", "Source Discovery Agent"],
+  ["normalize_dedupe", "Normalization Agent"],
+  ["rank_cluster", "Ranking Agent"],
+  ["draft_structure", "Structure Agent"],
+  ["draft_script", "Script Drafting Agent"],
+  ["citation_validator", "Citation Validator Agent"],
+  ["show_notes", "Show Notes Agent"],
+  ["system_monitoring", "System Monitoring Agent"],
+];
+
+const stageModelOptions = [
+  ["retrieve_sources", "Retrieve Sources"],
+  ["normalize_dedupe", "Normalize + Dedupe"],
+  ["rank_cluster", "Rank + Cluster"],
+  ["draft_structure", "Draft Structure"],
+  ["generate_script", "Generate Script"],
+  ["validate_citations", "Validate Citations"],
+  ["publish_artifact_package", "Publish Artifact"],
+];
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -182,6 +214,9 @@ function summaryIcon(key) {
 }
 
 function setView(view) {
+  if (!appViews.includes(view)) {
+    view = "home";
+  }
   state.activeView = view;
   for (const item of els.navItems) {
     item.classList.toggle("active", item.dataset.view === view);
@@ -381,6 +416,50 @@ function renderTagList(items = []) {
     .join("");
 }
 
+function formatModelMap(map = {}, options = []) {
+  const labels = new Map(options);
+  const keys = [...new Set([...options.map(([key]) => key), ...Object.keys(map || {})])];
+  return keys
+    .map((key) => `${key}=${map?.[key] || ""}${labels.has(key) ? ` # ${labels.get(key)}` : ""}`)
+    .join("\n");
+}
+
+function parseModelMap(value) {
+  return String(value || "")
+    .split("\n")
+    .map((line) => line.split("#")[0].trim())
+    .filter(Boolean)
+    .reduce((acc, line) => {
+      const separator = line.includes("=") ? "=" : ":";
+      const [rawKey, ...rest] = line.split(separator);
+      const key = rawKey?.trim();
+      const model = rest.join(separator).trim();
+      if (key && model) {
+        acc[key] = model;
+      }
+      return acc;
+    }, {});
+}
+
+export function buildModelRouterPayload(source) {
+  return {
+    url: readSourceValue(source, "url").trim(),
+    authMode: readSourceValue(source, "authMode") || "none",
+    authHeaderName: readSourceValue(source, "authHeaderName") || "Authorization",
+    defaultModel: readSourceValue(source, "defaultModel") || "gpt-4.1-mini",
+    timeoutSeconds: parsePositiveMinutes(readSourceValue(source, "timeoutSeconds"), 15) || 15,
+    roleModels: parseModelMap(readSourceValue(source, "roleModels")),
+    stageModels: parseModelMap(readSourceValue(source, "stageModels")),
+    taskTypeModels: parseModelMap(readSourceValue(source, "taskTypeModels")),
+    credentials: {
+      bearerToken: readSourceValue(source, "bearerToken"),
+      basicUsername: readSourceValue(source, "basicUsername"),
+      basicPassword: readSourceValue(source, "basicPassword"),
+      headerValue: readSourceValue(source, "headerValue") || readSourceValue(source, "bearerToken"),
+    },
+  };
+}
+
 function renderNewsProfile(task) {
   const context = task?.newsContext || {};
   const schedule = task?.newsSchedule || {};
@@ -444,15 +523,17 @@ function renderNewsProfile(task) {
 
 function renderSummaryCards(cards = []) {
   els.summaryCards.innerHTML = cards
-    .map(
-      (card) => `
-        <article class="summary-card ${toneClasses[card.tone] || "tone-violet"}">
+    .map((card) => {
+      const targetView = summaryCardTargets[card.key] || "home";
+      return `
+        <button class="summary-card ${toneClasses[card.tone] || "tone-violet"}" data-summary-view="${escapeHtml(targetView)}" aria-label="Open ${escapeHtml(card.label)} page">
           <div class="summary-label">${escapeHtml(card.label)}</div>
           <div class="summary-value">${escapeHtml(card.value)}</div>
           <div class="summary-detail">${escapeHtml(card.detail)}</div>
           <div class="summary-badge" aria-hidden="true">${summaryIcon(card.key)}</div>
-        </article>`
-    )
+          <div class="summary-action">Open ${escapeHtml(targetView)}</div>
+        </button>`;
+    })
     .join("");
 }
 
@@ -895,6 +976,135 @@ function renderAgentsView() {
     </div>`;
 }
 
+function renderModelsView() {
+  const modelRouter = state.dashboard?.modelRouter || {};
+  const roleModels = modelRouter.roleModels || {};
+  const stageModels = modelRouter.stageModels || {};
+  const taskTypeModels = modelRouter.taskTypeModels || {};
+  const credentials = modelRouter.credentials || {};
+  const selected = selectedTask();
+  const selectedRoutes = selected?.modelRouting || {};
+
+  els.modelsRouter.innerHTML = `
+    <div class="panel-header">
+      <div>
+        <h3 class="panel-title">LLM Model Router</h3>
+        <p class="panel-note">Configure provider URL, auth, and agent-specific model routing.</p>
+      </div>
+      <div class="status-chip ${modelRouter.url ? "completed" : "idle"}">${modelRouter.url ? "remote" : "local"}</div>
+    </div>
+    <form id="model-router-form" class="model-router-form">
+      <div class="field-grid">
+        <label class="field">
+          <span class="field-label">Router URL</span>
+          <input name="url" type="url" placeholder="https://router.local/v1/route" value="${escapeHtml(modelRouter.url || "")}">
+        </label>
+        <label class="field">
+          <span class="field-label">Default model</span>
+          <input name="defaultModel" type="text" value="${escapeHtml(modelRouter.defaultModel || "gpt-4.1-mini")}">
+        </label>
+      </div>
+      <div class="field-grid compact">
+        <label class="field">
+          <span class="field-label">Auth mode</span>
+          <select name="authMode">
+            ${["none", "bearer", "basic", "header"]
+              .map((mode) => `<option value="${mode}" ${mode === (modelRouter.authMode || "none") ? "selected" : ""}>${mode}</option>`)
+              .join("")}
+          </select>
+        </label>
+        <label class="field">
+          <span class="field-label">Timeout seconds</span>
+          <input name="timeoutSeconds" type="number" min="1" value="${escapeHtml(modelRouter.timeoutSeconds || 15)}">
+        </label>
+      </div>
+      <div class="field-grid compact">
+        <label class="field">
+          <span class="field-label">Auth header name</span>
+          <input name="authHeaderName" type="text" value="${escapeHtml(modelRouter.authHeaderName || "Authorization")}">
+        </label>
+        <label class="field">
+          <span class="field-label">Bearer / header value</span>
+          <input name="bearerToken" type="password" autocomplete="off" placeholder="${credentials.hasBearerToken || credentials.hasHeaderValue ? "configured" : "optional"}">
+        </label>
+      </div>
+      <div class="field-grid compact">
+        <label class="field">
+          <span class="field-label">Basic username</span>
+          <input name="basicUsername" type="text" autocomplete="off" placeholder="${credentials.hasBasicCredentials ? "configured" : "optional"}">
+        </label>
+        <label class="field">
+          <span class="field-label">Basic password</span>
+          <input name="basicPassword" type="password" autocomplete="off" placeholder="${credentials.hasBasicCredentials ? "configured" : "optional"}">
+        </label>
+      </div>
+      <label class="field">
+        <span class="field-label">Agent role models</span>
+        <textarea name="roleModels" rows="9">${escapeHtml(formatModelMap(roleModels, roleModelOptions))}</textarea>
+      </label>
+      <label class="field">
+        <span class="field-label">Workflow stage models</span>
+        <textarea name="stageModels" rows="8">${escapeHtml(formatModelMap(stageModels, stageModelOptions))}</textarea>
+      </label>
+      <label class="field">
+        <span class="field-label">Task type models</span>
+        <textarea name="taskTypeModels" rows="3">${escapeHtml(formatModelMap(taskTypeModels, [["news-podcast", "News Podcast"], ["system-monitoring", "System Monitoring"]]))}</textarea>
+      </label>
+      <div class="form-actions">
+        <button type="button" class="hero-chip" id="model-router-refresh">Reload</button>
+        <button type="submit" class="primary-action">Save model router</button>
+      </div>
+      <div class="footer-note" id="model-router-message">
+        Source ${escapeHtml(modelRouter.source || "env")} • credentials: bearer ${credentials.hasBearerToken ? "yes" : "no"}, basic ${credentials.hasBasicCredentials ? "yes" : "no"}, header ${credentials.hasHeaderValue ? "yes" : "no"}
+      </div>
+    </form>`;
+
+  els.modelsResolution.innerHTML = `
+    <div class="panel-header">
+      <div>
+        <h3 class="panel-title">Agent Route Preview</h3>
+        <p class="panel-note">What each bounded agent will ask the model router to use.</p>
+      </div>
+      <button class="hero-chip" id="model-router-test">Test selected task route</button>
+    </div>
+    <div class="metric-grid">
+      <div class="metric-box">
+        <div class="metric-label">Selected task</div>
+        <div class="metric-value">${escapeHtml(selected?.taskId || "none")}</div>
+      </div>
+      <div class="metric-box">
+        <div class="metric-label">Router mode</div>
+        <div class="metric-value">${escapeHtml(modelRouter.url ? "remote" : "local")}</div>
+      </div>
+    </div>
+    <div class="compact-list" style="margin-top:14px;">
+      ${roleModelOptions
+        .map(([role, label]) => {
+          const configured = roleModels[role] || modelRouter.defaultModel || "gpt-4.1-mini";
+          return `
+            <div class="compact-item">
+              <div>
+                <div class="name">${escapeHtml(label)}</div>
+                <div class="desc">${escapeHtml(role)}</div>
+              </div>
+              <div class="status-chip">${escapeHtml(configured)}</div>
+            </div>`;
+        })
+        .join("")}
+    </div>
+    <div class="script-view" style="margin-top:14px;">
+      ${Object.entries(selectedRoutes)
+        .map(
+          ([stage, route]) => `
+            <div class="script-section">
+              <div class="item-title">${escapeHtml(stage)}</div>
+              <div class="script-line">model ${escapeHtml(route.model || "unknown")} • source ${escapeHtml(route.source || "unknown")} • provider ${escapeHtml(route.provider || "local")}</div>
+            </div>`
+        )
+        .join("") || `<div class="section-note">No task route history yet. Run or select a task after saving to see stage decisions.</div>`}
+    </div>`;
+}
+
 function renderAlertsView() {
   const alerts = state.dashboard?.alerts || [];
   const monitoring = state.dashboard?.monitoring || {};
@@ -1028,6 +1238,7 @@ function renderAll() {
   renderPodcastView();
   renderTasksView();
   renderAgentsView();
+  renderModelsView();
   renderAlertsView();
   setView(state.activeView);
   if (task && state.selectedTaskReplayTaskId !== state.selectedTaskId && state.selectedTaskId !== state.liveTaskId) {
@@ -1164,6 +1375,41 @@ async function runMonitoringDigest() {
   await loadDashboard();
 }
 
+async function saveModelRouter(event) {
+  event.preventDefault();
+  const form = event.target;
+  const payload = buildModelRouterPayload(new FormData(form));
+  const updated = await api("/model-router", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  state.dashboard.modelRouter = updated;
+  const message = document.querySelector("#model-router-message");
+  if (message) {
+    message.textContent = `Saved. Source ${updated.source || "runtime"} • default ${updated.defaultModel || "gpt-4.1-mini"}`;
+  }
+  await loadDashboard();
+  state.activeView = "models";
+  setView("models");
+}
+
+async function testModelRoute() {
+  const task = selectedTask();
+  const query = new URLSearchParams({
+    stage: "generate_script",
+    role: "draft_script",
+    fallbackModel: state.dashboard?.modelRouter?.defaultModel || "gpt-4.1-mini",
+  });
+  const resolved = await api(`/model-router/resolve?${query.toString()}`);
+  const message = document.querySelector("#model-router-message");
+  if (message) {
+    message.textContent = `Test route${task ? ` for ${task.taskId}` : ""}: ${resolved.model} from ${resolved.source || "local"}`;
+  }
+  await loadDashboard();
+  state.activeView = "models";
+  setView("models");
+}
+
 function sendVoiceCommand(commandText) {
   if (!state.voiceSocket || state.voiceSocket.readyState !== WebSocket.OPEN) {
     ensureVoiceSocket();
@@ -1247,7 +1493,7 @@ function connectEvents(taskId) {
 
 function bindGlobalListeners() {
   const initialHash = window.location.hash.replace("#", "");
-  if (["home", "podcast", "tasks", "agents", "alerts"].includes(initialHash)) {
+  if (appViews.includes(initialHash)) {
     state.activeView = initialHash;
   }
 
@@ -1278,10 +1524,17 @@ function bindGlobalListeners() {
   });
   window.addEventListener("hashchange", () => {
     const view = window.location.hash.replace("#", "");
-    if (["home", "podcast", "tasks", "agents", "alerts"].includes(view)) {
+    if (appViews.includes(view)) {
       state.activeView = view;
       setView(view);
     }
+  });
+
+  els.summaryCards.addEventListener("click", (event) => {
+    const target = event.target.closest("[data-summary-view]");
+    if (!target) return;
+    state.activeView = target.dataset.summaryView;
+    setView(state.activeView);
   });
 
   els.tasksList.addEventListener("click", (event) => {
@@ -1341,6 +1594,24 @@ function bindGlobalListeners() {
     if (target.id === "task-podcast") {
       state.activeView = "podcast";
       setView(state.activeView);
+    }
+  });
+
+  els.modelsRouter?.addEventListener("submit", (event) => {
+    if (event.target?.id === "model-router-form") {
+      saveModelRouter(event).catch(console.error);
+    }
+  });
+
+  els.modelsRouter?.addEventListener("click", (event) => {
+    if (event.target.closest("#model-router-refresh")) {
+      loadDashboard().catch(console.error);
+    }
+  });
+
+  els.modelsResolution?.addEventListener("click", (event) => {
+    if (event.target.closest("#model-router-test")) {
+      testModelRoute().catch(console.error);
     }
   });
 }
