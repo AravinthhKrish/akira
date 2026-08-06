@@ -37,6 +37,7 @@ This repository is the composition repo for a local-first, single-user multi-age
 - `services/agent-runtime`: Kotlin worker-runtime service with bounded role handlers for source discovery, ranking, drafting, citation validation, and show-note generation
 - `ops/observability`: collector and metrics scrape scaffolding for Elastic/Prometheus-style observability
 - `k8s`: starter manifests for dashboard, orchestrator, storage, and NATS
+- `config/akira.yaml`: single deployment config for Kubernetes service/dependency generation
 - `docker-compose.yml`: local composition including optional sibling-repo services
 
 ## Repo layout
@@ -97,6 +98,17 @@ npm run dashboard
 ```
 
 Then open [http://localhost:3000](http://localhost:3000).
+
+## Kubernetes config generation
+
+AKIRA's Kubernetes deployment can be generated from one source-of-truth file:
+
+```bash
+npm run k8s:generate
+kubectl apply -f k8s/generated/akira.yaml
+```
+
+Edit `config/akira.yaml` to change service images, enabled services, API URLs, storage backend, LLM model router settings, NATS, and observability wiring. The generated manifest is written to `k8s/generated/akira.yaml`.
 
 ## Notes about external services
 

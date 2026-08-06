@@ -59,6 +59,7 @@ Build a local-first, single-user, AKIRA multi-agent platform whose first end-to-
 - Storage service implemented with disk-backed tasks, events, artifacts, vector-ish indexing, purge, structured logs, and metrics
 - Kotlin agent runtime scaffolded with health/metrics endpoints and structured-log pattern
 - Compose and Kubernetes starter manifests added
+- Kubernetes can now be generated from `config/akira.yaml` into `k8s/generated/akira.yaml`
 - Observability configs added for Prometheus and collector-to-Elastic routing
 
 ## Next likely phases

@@ -1,0 +1,114 @@
+# AKIRA single deployment configuration.
+# This file is the source of truth for generated Kubernetes manifests.
+
+platform:
+  name: akira
+  namespace: akira
+  imagePullPolicy: IfNotPresent
+  observabilityLogDir: /app/data/observability/logs
+
+dependencies:
+  api:
+    dashboardUrl: http://akira-dashboard:3000
+    orchestratorUrl: http://akira-orchestrator:9000
+    storageUrl: http://storagemcp-platform:9100
+    agentRuntimeUrl: http://agent-runtime:8081
+    mcpServerUrl: http://mcp-server-generic:8080
+    natsUrl: nats://nats-jetstream:4222
+
+  db:
+    backend: disk
+    storageDataDir: /app/data/storage
+    storageClassName: standard
+    storageSize: 5Gi
+    mongodbUrl: ""
+    weaviateUrl: ""
+
+  llm:
+    modelRouterUrl: ""
+    authMode: none
+    authHeaderName: Authorization
+    defaultModel: gpt-4.1-mini
+    timeoutSeconds: 15
+    roleModelsJson: '{"draft_script":"gpt-4.1","citation_validator":"gpt-4.1-mini"}'
+    stageModelsJson: '{}'
+    taskTypeModelsJson: '{}'
+    bearerTokenSecretName: akira-model-router-secrets
+    bearerTokenSecretKey: MODEL_ROUTER_BEARER_TOKEN
+    basicUsernameSecretName: akira-model-router-secrets
+    basicUsernameSecretKey: MODEL_ROUTER_BASIC_USERNAME
+    basicPasswordSecretName: akira-model-router-secrets
+    basicPasswordSecretKey: MODEL_ROUTER_BASIC_PASSWORD
+    headerValueSecretName: akira-model-router-secrets
+    headerValueSecretKey: MODEL_ROUTER_HEADER_VALUE
+
+  observability:
+    elasticsearchUrl: ""
+    elasticLogIndexPattern: akira-service-logs-*
+    prometheusConfigMap: akira-prometheus-config
+    otelCollectorConfigMap: akira-otel-config
+
+services:
+  dashboard:
+    enabled: true
+    name: akira-dashboard
+    image: akira-dashboard:latest
+    replicas: 1
+    port: 3000
+
+  orchestrator:
+    enabled: true
+    name: akira-orchestrator
+    image: akira-orchestrator:latest
+    replicas: 1
+    port: 9000
+
+  storageMcpPlatform:
+    enabled: true
+    name: storagemcp-platform
+    image: storagemcp-platform:latest
+    replicas: 1
+    port: 9100
+
+  agentRuntime:
+    enabled: true
+    name: agent-runtime
+    image: akira-agent-runtime:latest
+    replicas: 1
+    port: 8081
+
+  mcpServerGeneric:
+    enabled: true
+    name: mcp-server-generic
+    image: mcp-server-generic:latest
+    replicas: 1
+    port: 8080
+
+  nats:
+    enabled: true
+    name: nats-jetstream
+    image: nats:2.10-alpine
+    replicas: 1
+    clientPort: 4222
+    monitorPort: 8222
+    args: -js
+
+  prometheus:
+    enabled: false
+    name: prometheus
+    image: prom/prometheus:v2.54.1
+    replicas: 1
+    port: 9090
+
+  otelCollector:
+    enabled: false
+    name: otel-collector
+    image: otel/opentelemetry-collector-contrib:0.108.0
+    replicas: 1
+
+  elasticsearch:
+    enabled: false
+    name: elasticsearch
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    replicas: 1
+    port: 9200

@@ -1,6 +1,6 @@
 # Deployment and Ops Subplan
 
-Last updated: 2026-07-20
+Last updated: 2026-08-06
 
 ## Purpose
 
@@ -20,6 +20,8 @@ The ops layer makes the platform runnable locally today while keeping a clear pa
 - service Dockerfiles for dashboard, orchestrator, storage, and agent runtime
 - Kubernetes starter manifests for dashboard, orchestrator, storage, and NATS
 - Kubernetes dependency and config matrix in `docs/journey/layers/kubernetes-dependencies-and-config.md`
+- single Kubernetes source config in `config/akira.yaml`
+- `scripts/generate-k8s.mjs` generates `k8s/generated/akira.yaml` from the single config
 - `scripts/smoke.mjs` for end-to-end health and task smoke flow
 - `ops/observability/` for Prometheus scrape config and collector-to-Elastic scaffolding
 - shared local observability log mirror mounted through compose
@@ -32,6 +34,7 @@ The ops layer makes the platform runnable locally today while keeping a clear pa
 - document model-router auth modes and safe credential handling in the startup docs
 - separate dev vs production compose profiles
 - add persistence volumes and resource requests to manifests
+- add production overlays for ingress, probes, and secret creation
 - decide when JetStream becomes a hard runtime dependency instead of a direction
 - decide when Prometheus and Elastic become required rather than optional profiles
 

@@ -1,0 +1,412 @@
+# Generated from config/akira.yaml by scripts/generate-k8s.mjs.
+# Edit the single AKIRA config, then run npm run k8s:generate.
+apiVersion: "v1"
+kind: "Namespace"
+metadata:
+  name: "akira"
+  labels:
+    app.kubernetes.io/part-of: "akira"
+    app.kubernetes.io/managed-by: "akira-config-generator"
+---
+apiVersion: "v1"
+kind: "ConfigMap"
+metadata:
+  name: "akira-runtime-config"
+  namespace: "akira"
+  labels:
+    app: "akira-runtime-config"
+    app.kubernetes.io/name: "akira-runtime-config"
+    app.kubernetes.io/part-of: "akira"
+    app.kubernetes.io/managed-by: "akira-config-generator"
+data:
+  DASHBOARD_URL: "http://akira-dashboard:3000"
+  ORCHESTRATOR_URL: "http://akira-orchestrator:9000"
+  STORAGE_URL: "http://storagemcp-platform:9100"
+  AGENT_RUNTIME_URL: "http://agent-runtime:8081"
+  MCP_SERVER_URL: "http://mcp-server-generic:8080"
+  NATS_URL: "nats://nats-jetstream:4222"
+  STORAGE_BACKEND: "disk"
+  STORAGE_DATA_DIR: "/app/data/storage"
+  MODEL_ROUTER_URL: ""
+  MODEL_ROUTER_AUTH_MODE: "none"
+  MODEL_ROUTER_DEFAULT_MODEL: "gpt-4.1-mini"
+  ELASTICSEARCH_URL: ""
+  ELASTIC_LOG_INDEX_PATTERN: "akira-service-logs-*"
+---
+apiVersion: "v1"
+kind: "PersistentVolumeClaim"
+metadata:
+  name: "storagemcp-platform-data"
+  namespace: "akira"
+  labels:
+    app: "storagemcp-platform-data"
+    app.kubernetes.io/name: "storagemcp-platform-data"
+    app.kubernetes.io/part-of: "akira"
+    app.kubernetes.io/managed-by: "akira-config-generator"
+spec:
+  accessModes:
+    - "ReadWriteOnce"
+  resources:
+    requests:
+      storage: "5Gi"
+  storageClassName: "standard"
+---
+apiVersion: "apps/v1"
+kind: "Deployment"
+metadata:
+  name: "akira-dashboard"
+  namespace: "akira"
+  labels:
+    app: "akira-dashboard"
+    app.kubernetes.io/name: "akira-dashboard"
+    app.kubernetes.io/part-of: "akira"
+    app.kubernetes.io/managed-by: "akira-config-generator"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: "akira-dashboard"
+  template:
+    metadata:
+      labels:
+        app: "akira-dashboard"
+        app.kubernetes.io/name: "akira-dashboard"
+        app.kubernetes.io/part-of: "akira"
+        app.kubernetes.io/managed-by: "akira-config-generator"
+    spec:
+      containers:
+        - name: "dashboard"
+          image: "akira-dashboard:latest"
+          imagePullPolicy: "IfNotPresent"
+          ports:
+            - containerPort: 3000
+          env:
+            - name: "PORT"
+              value: "3000"
+            - name: "ORCHESTRATOR_URL"
+              value: "http://akira-orchestrator:9000"
+            - name: "OBSERVABILITY_LOG_DIR"
+              value: "/app/data/observability/logs"
+---
+apiVersion: "v1"
+kind: "Service"
+metadata:
+  name: "akira-dashboard"
+  namespace: "akira"
+  labels:
+    app: "akira-dashboard"
+    app.kubernetes.io/name: "akira-dashboard"
+    app.kubernetes.io/part-of: "akira"
+    app.kubernetes.io/managed-by: "akira-config-generator"
+spec:
+  selector:
+    app: "akira-dashboard"
+  ports:
+    - name: "http"
+      port: 3000
+      targetPort: 3000
+---
+apiVersion: "apps/v1"
+kind: "Deployment"
+metadata:
+  name: "storagemcp-platform"
+  namespace: "akira"
+  labels:
+    app: "storagemcp-platform"
+    app.kubernetes.io/name: "storagemcp-platform"
+    app.kubernetes.io/part-of: "akira"
+    app.kubernetes.io/managed-by: "akira-config-generator"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: "storagemcp-platform"
+  template:
+    metadata:
+      labels:
+        app: "storagemcp-platform"
+        app.kubernetes.io/name: "storagemcp-platform"
+        app.kubernetes.io/part-of: "akira"
+        app.kubernetes.io/managed-by: "akira-config-generator"
+    spec:
+      containers:
+        - name: "storage"
+          image: "storagemcp-platform:latest"
+          imagePullPolicy: "IfNotPresent"
+          ports:
+            - containerPort: 9100
+          env:
+            - name: "PORT"
+              value: "9100"
+            - name: "STORAGE_BACKEND"
+              value: "disk"
+            - name: "STORAGE_DATA_DIR"
+              value: "/app/data/storage"
+            - name: "OBSERVABILITY_LOG_DIR"
+              value: "/app/data/observability/logs"
+          volumeMounts:
+            - name: "storage-data"
+              mountPath: "/app/data/storage"
+      volumes:
+        - name: "storage-data"
+          persistentVolumeClaim:
+            claimName: "storagemcp-platform-data"
+---
+apiVersion: "v1"
+kind: "Service"
+metadata:
+  name: "storagemcp-platform"
+  namespace: "akira"
+  labels:
+    app: "storagemcp-platform"
+    app.kubernetes.io/name: "storagemcp-platform"
+    app.kubernetes.io/part-of: "akira"
+    app.kubernetes.io/managed-by: "akira-config-generator"
+spec:
+  selector:
+    app: "storagemcp-platform"
+  ports:
+    - name: "http"
+      port: 9100
+      targetPort: 9100
+---
+apiVersion: "apps/v1"
+kind: "Deployment"
+metadata:
+  name: "agent-runtime"
+  namespace: "akira"
+  labels:
+    app: "agent-runtime"
+    app.kubernetes.io/name: "agent-runtime"
+    app.kubernetes.io/part-of: "akira"
+    app.kubernetes.io/managed-by: "akira-config-generator"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: "agent-runtime"
+  template:
+    metadata:
+      labels:
+        app: "agent-runtime"
+        app.kubernetes.io/name: "agent-runtime"
+        app.kubernetes.io/part-of: "akira"
+        app.kubernetes.io/managed-by: "akira-config-generator"
+    spec:
+      containers:
+        - name: "agent-runtime"
+          image: "akira-agent-runtime:latest"
+          imagePullPolicy: "IfNotPresent"
+          ports:
+            - containerPort: 8081
+          env:
+            - name: "PORT"
+              value: "8081"
+            - name: "OBSERVABILITY_LOG_DIR"
+              value: "/app/data/observability/logs"
+---
+apiVersion: "v1"
+kind: "Service"
+metadata:
+  name: "agent-runtime"
+  namespace: "akira"
+  labels:
+    app: "agent-runtime"
+    app.kubernetes.io/name: "agent-runtime"
+    app.kubernetes.io/part-of: "akira"
+    app.kubernetes.io/managed-by: "akira-config-generator"
+spec:
+  selector:
+    app: "agent-runtime"
+  ports:
+    - name: "http"
+      port: 8081
+      targetPort: 8081
+---
+apiVersion: "apps/v1"
+kind: "Deployment"
+metadata:
+  name: "akira-orchestrator"
+  namespace: "akira"
+  labels:
+    app: "akira-orchestrator"
+    app.kubernetes.io/name: "akira-orchestrator"
+    app.kubernetes.io/part-of: "akira"
+    app.kubernetes.io/managed-by: "akira-config-generator"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: "akira-orchestrator"
+  template:
+    metadata:
+      labels:
+        app: "akira-orchestrator"
+        app.kubernetes.io/name: "akira-orchestrator"
+        app.kubernetes.io/part-of: "akira"
+        app.kubernetes.io/managed-by: "akira-config-generator"
+    spec:
+      containers:
+        - name: "orchestrator"
+          image: "akira-orchestrator:latest"
+          imagePullPolicy: "IfNotPresent"
+          ports:
+            - containerPort: 9000
+          env:
+            - name: "PORT"
+              value: "9000"
+            - name: "STORAGE_URL"
+              value: "http://storagemcp-platform:9100"
+            - name: "AGENT_RUNTIME_URL"
+              value: "http://agent-runtime:8081"
+            - name: "MCP_SERVER_URL"
+              value: "http://mcp-server-generic:8080"
+            - name: "DASHBOARD_URL"
+              value: "http://akira-dashboard:3000"
+            - name: "NATS_URL"
+              value: "nats://nats-jetstream:4222"
+            - name: "OBSERVABILITY_LOG_DIR"
+              value: "/app/data/observability/logs"
+            - name: "ELASTIC_LOG_INDEX_PATTERN"
+              value: "akira-service-logs-*"
+            - name: "MODEL_ROUTER_AUTH_MODE"
+              value: "none"
+            - name: "MODEL_ROUTER_AUTH_HEADER_NAME"
+              value: "Authorization"
+            - name: "MODEL_ROUTER_DEFAULT_MODEL"
+              value: "gpt-4.1-mini"
+            - name: "MODEL_ROUTER_TIMEOUT_SECONDS"
+              value: "15"
+            - name: "MODEL_ROUTER_ROLE_MODELS_JSON"
+              value: "{\"draft_script\":\"gpt-4.1\",\"citation_validator\":\"gpt-4.1-mini\"}"
+            - name: "MODEL_ROUTER_STAGE_MODELS_JSON"
+              value: "{}"
+            - name: "MODEL_ROUTER_TASK_TYPE_MODELS_JSON"
+              value: "{}"
+---
+apiVersion: "v1"
+kind: "Service"
+metadata:
+  name: "akira-orchestrator"
+  namespace: "akira"
+  labels:
+    app: "akira-orchestrator"
+    app.kubernetes.io/name: "akira-orchestrator"
+    app.kubernetes.io/part-of: "akira"
+    app.kubernetes.io/managed-by: "akira-config-generator"
+spec:
+  selector:
+    app: "akira-orchestrator"
+  ports:
+    - name: "http"
+      port: 9000
+      targetPort: 9000
+---
+apiVersion: "apps/v1"
+kind: "Deployment"
+metadata:
+  name: "mcp-server-generic"
+  namespace: "akira"
+  labels:
+    app: "mcp-server-generic"
+    app.kubernetes.io/name: "mcp-server-generic"
+    app.kubernetes.io/part-of: "akira"
+    app.kubernetes.io/managed-by: "akira-config-generator"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: "mcp-server-generic"
+  template:
+    metadata:
+      labels:
+        app: "mcp-server-generic"
+        app.kubernetes.io/name: "mcp-server-generic"
+        app.kubernetes.io/part-of: "akira"
+        app.kubernetes.io/managed-by: "akira-config-generator"
+    spec:
+      containers:
+        - name: "mcp-server-generic"
+          image: "mcp-server-generic:latest"
+          imagePullPolicy: "IfNotPresent"
+          ports:
+            - containerPort: 8080
+          env:
+            - name: "PORT"
+              value: "8080"
+            - name: "OBSERVABILITY_LOG_DIR"
+              value: "/app/data/observability/logs"
+---
+apiVersion: "v1"
+kind: "Service"
+metadata:
+  name: "mcp-server-generic"
+  namespace: "akira"
+  labels:
+    app: "mcp-server-generic"
+    app.kubernetes.io/name: "mcp-server-generic"
+    app.kubernetes.io/part-of: "akira"
+    app.kubernetes.io/managed-by: "akira-config-generator"
+spec:
+  selector:
+    app: "mcp-server-generic"
+  ports:
+    - name: "http"
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: "apps/v1"
+kind: "Deployment"
+metadata:
+  name: "nats-jetstream"
+  namespace: "akira"
+  labels:
+    app: "nats-jetstream"
+    app.kubernetes.io/name: "nats-jetstream"
+    app.kubernetes.io/part-of: "akira"
+    app.kubernetes.io/managed-by: "akira-config-generator"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: "nats-jetstream"
+  template:
+    metadata:
+      labels:
+        app: "nats-jetstream"
+        app.kubernetes.io/name: "nats-jetstream"
+        app.kubernetes.io/part-of: "akira"
+        app.kubernetes.io/managed-by: "akira-config-generator"
+    spec:
+      containers:
+        - name: "nats"
+          image: "nats:2.10-alpine"
+          imagePullPolicy: "IfNotPresent"
+          ports:
+            - containerPort: 4222
+            - containerPort: 8222
+          env:
+            []
+          args:
+            - "-js"
+---
+apiVersion: "v1"
+kind: "Service"
+metadata:
+  name: "nats-jetstream"
+  namespace: "akira"
+  labels:
+    app: "nats-jetstream"
+    app.kubernetes.io/name: "nats-jetstream"
+    app.kubernetes.io/part-of: "akira"
+    app.kubernetes.io/managed-by: "akira-config-generator"
+spec:
+  selector:
+    app: "nats-jetstream"
+  ports:
+    - name: "client"
+      port: 4222
+      targetPort: 4222
+    - name: "monitor"
+      port: 8222
+      targetPort: 8222

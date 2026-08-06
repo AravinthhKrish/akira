@@ -1,6 +1,6 @@
 # Kubernetes Dependencies and Config
 
-Last updated: 2026-07-20
+Last updated: 2026-08-06
 
 ## Purpose
 
@@ -31,22 +31,32 @@ This layer captures the Kubernetes-facing dependency graph and the config surfac
 
 ## Config split
 
-- Put non-secret values in ConfigMaps or environment blocks.
+- Put non-secret values in `config/akira.yaml`; generated manifests include the runtime ConfigMap and service environment blocks.
 - Put router credentials, basic auth secrets, tokens, and any external service keys in Secrets.
 - Keep the dashboard pointed at the orchestrator, not directly at storage or workers.
 - Keep the orchestrator responsible for storage, worker, router, and MCP wiring.
+
+## Single config generation
+
+The generated Kubernetes path is:
+
+1. Edit `config/akira.yaml`.
+2. Run `npm run k8s:generate`.
+3. Inspect `k8s/generated/akira.yaml`.
+4. Apply the generated manifest with `kubectl apply -f k8s/generated/akira.yaml`.
+
+The generator currently emits namespace, runtime ConfigMap, disk storage PVC, Deployment, and Service objects for enabled services.
 
 ## Image setup flow
 
 1. Build the service images from the repo root.
 2. Tag them to match the manifests or your registry naming convention.
 3. Load them into the local cluster or push them to the remote registry.
-4. Apply the `k8s/` manifests.
+4. Run `npm run k8s:generate` and apply `k8s/generated/akira.yaml`.
 5. Verify service health before turning on the observability profile.
 
 ## Current gaps
 
-- `k8s/` still needs a first-class `agent-runtime` manifest.
-- The starter manifests are intentionally minimal and should grow ConfigMap and Secret overlays next.
+- Secret creation is still intentionally external so credentials do not get committed.
+- The generated manifests should grow ingress, probes, resource requests, and production storage overlays next.
 - The model-router config is dynamic at runtime, but Kubernetes should still get an initial env baseline for the first boot.
-
