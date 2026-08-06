@@ -17,6 +17,7 @@ docs/journey/
 │   └── 2026-07-20-k8s-dependency-config.md
 │   └── 2026-07-20-news-context-recurring-search.md
 │   └── 2026-08-06-single-config-k8s-generation.md
+│   └── 2026-08-06-llm-provider-catalog.md
 └── layers/
     ├── dashboard.md
     ├── orchestrator.md

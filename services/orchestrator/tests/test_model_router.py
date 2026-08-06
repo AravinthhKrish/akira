@@ -9,7 +9,7 @@ SERVICE_DIR = CURRENT_DIR.parent
 if str(SERVICE_DIR) not in sys.path:
     sys.path.append(str(SERVICE_DIR))
 
-from model_router import ModelRouter, ModelRouterConfig
+from model_router import LlmProviderConfig, ModelRouter, ModelRouterConfig
 
 
 class DummyResponse:
@@ -48,12 +48,58 @@ class ModelRouterTests(unittest.TestCase):
                 "url": "https://router.example/v1/route",
                 "authMode": "bearer",
                 "credentials": {"bearerToken": "secret-token"},
+                "defaultProvider": "openai",
+                "providers": [
+                    {
+                        "id": "openai",
+                        "label": "OpenAI",
+                        "url": "https://api.example/v1/responses",
+                        "authMode": "bearer",
+                        "credentials": {"bearerToken": "provider-token"},
+                        "models": ["gpt-4.1-mini", "gpt-4.1"],
+                        "defaultModel": "gpt-4.1-mini",
+                    }
+                ],
                 "roleModels": {"draft_script": "gpt-4.1"},
             }
         )
         self.assertEqual(snapshot["authMode"], "bearer")
         self.assertTrue(snapshot["credentials"]["hasBearerToken"])
         self.assertEqual(snapshot["roleModels"]["draft_script"], "gpt-4.1")
+        self.assertEqual(snapshot["defaultProvider"], "openai")
+        self.assertTrue(snapshot["catalogEnforced"])
+        self.assertEqual(snapshot["providers"][0]["id"], "openai")
+        self.assertTrue(snapshot["providers"][0]["credentials"]["hasBearerToken"])
+        self.assertNotIn("provider-token", json.dumps(snapshot))
+
+        route = router.resolve(role="draft_script")
+        self.assertEqual(route["model"], "gpt-4.1")
+        self.assertEqual(route["provider"], "openai")
+        self.assertEqual(route["providerUrl"], "https://api.example/v1/responses")
+        self.assertTrue(route["catalogMatched"])
+
+    def test_catalog_enforced_resolution_falls_back_to_configured_model(self):
+        router = ModelRouter(
+            ModelRouterConfig(
+                default_model="gpt-default",
+                default_provider="openai",
+                catalog_enforced=True,
+                providers={
+                    "openai": LlmProviderConfig(
+                        provider_id="openai",
+                        label="OpenAI",
+                        models=["gpt-approved"],
+                        default_model="gpt-approved",
+                    ),
+                },
+                role_models={"draft_script": "openai:not-approved"},
+            )
+        )
+
+        route = router.resolve(role="draft_script")
+        self.assertEqual(route["provider"], "openai")
+        self.assertEqual(route["model"], "gpt-approved")
+        self.assertIn("not in provider", route["warning"])
 
     def test_remote_resolution_uses_auth_headers(self):
         router = ModelRouter(

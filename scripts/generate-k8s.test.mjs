@@ -27,7 +27,9 @@ test("single AKIRA config drives service selection and dependency env", async ()
 
   const orchestratorEnv = orchestrator.spec.template.spec.containers[0].env;
   assert.ok(orchestratorEnv.some((item) => item.name === "STORAGE_URL" && item.value === "http://storagemcp-platform:9100"));
+  assert.ok(orchestratorEnv.some((item) => item.name === "MODEL_ROUTER_DEFAULT_PROVIDER" && item.value === "local"));
   assert.ok(orchestratorEnv.some((item) => item.name === "MODEL_ROUTER_DEFAULT_MODEL" && item.value === "gpt-4.1-mini"));
+  assert.ok(orchestratorEnv.some((item) => item.name === "MODEL_ROUTER_PROVIDERS_JSON" && item.value.includes('"id":"local"')));
   assert.ok(orchestratorEnv.some((item) => item.name === "NATS_URL" && item.value === "nats://nats-jetstream:4222"));
   assert.ok(orchestratorEnv.some((item) => item.name === "MCP_FALLBACK_ON_ERROR" && item.value === "true"));
 

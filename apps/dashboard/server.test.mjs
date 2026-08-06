@@ -151,8 +151,23 @@ test("model router composer payload supports agent role mappings and credentials
         ["authMode", "bearer"],
         ["authHeaderName", "Authorization"],
         ["defaultModel", "gpt-4.1-mini"],
+        ["defaultProvider", "openai"],
         ["timeoutSeconds", "20"],
         ["bearerToken", "secret-token"],
+        [
+          "providers",
+          JSON.stringify([
+            {
+              id: "openai",
+              label: "OpenAI",
+              url: "https://api.openai.test/v1/responses",
+              authMode: "bearer",
+              defaultModel: "gpt-4.1-mini",
+              models: ["gpt-4.1-mini", "gpt-4.1"],
+              credentials: { bearerToken: "provider-secret" },
+            },
+          ]),
+        ],
         ["roleModels", "draft_script=gpt-4.1\ncitation_validator=gpt-4.1-mini # validator"],
         ["stageModels", "retrieve_sources=gpt-4.1-mini"],
         ["taskTypeModels", "news-podcast=gpt-4.1"],
@@ -162,9 +177,23 @@ test("model router composer payload supports agent role mappings and credentials
     assert.equal(payload.url, "https://router.local/route");
     assert.equal(payload.authMode, "bearer");
     assert.equal(payload.defaultModel, "gpt-4.1-mini");
+    assert.equal(payload.defaultProvider, "openai");
     assert.equal(payload.timeoutSeconds, 20);
     assert.equal(payload.credentials.bearerToken, "secret-token");
     assert.equal(payload.credentials.headerValue, "secret-token");
+    assert.deepEqual(payload.providers, [
+      {
+        id: "openai",
+        label: "OpenAI",
+        url: "https://api.openai.test/v1/responses",
+        authMode: "bearer",
+        authHeaderName: "Authorization",
+        defaultModel: "gpt-4.1-mini",
+        models: ["gpt-4.1-mini", "gpt-4.1"],
+        enabled: true,
+        credentials: { bearerToken: "provider-secret" },
+      },
+    ]);
     assert.deepEqual(payload.roleModels, {
       draft_script: "gpt-4.1",
       citation_validator: "gpt-4.1-mini",

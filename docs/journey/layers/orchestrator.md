@@ -45,6 +45,7 @@ The orchestrator owns task lifecycle, workflow control, replay coordination, and
 - dashboard-oriented tests cover the aggregation endpoint and its edge cases
 - model routing is dynamic through `services/orchestrator/model_router.py`
 - router config supports URL, auth mode, bearer/basic/header credentials, default model, and per-role/per-stage/task-type mappings
+- router config now includes a provider catalog with API URL, provider auth mode, preconfigured model list, default provider, and catalog enforcement for posted provider configs
 - `/v1/model-router` exposes the active router config and update hook
 - stage execution records the selected model in usage telemetry instead of relying on hardcoded literals
 - news tasks now persist a reusable `newsContext` profile and recurring `newsSchedule` snapshot on the task

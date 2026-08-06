@@ -441,16 +441,78 @@ function parseModelMap(value) {
     }, {});
 }
 
+function formatProviders(providers = []) {
+  const normalized = Array.isArray(providers) && providers.length
+    ? providers
+    : [
+        {
+          id: "local",
+          label: "Local fallback",
+          url: "",
+          authMode: "none",
+          authHeaderName: "Authorization",
+          defaultModel: "gpt-4.1-mini",
+          models: ["gpt-4.1-mini", "gpt-4.1"],
+          enabled: true,
+          credentials: {},
+        },
+      ];
+  return JSON.stringify(
+    normalized.map((provider) => ({
+      id: provider.id || provider.provider || "local",
+      label: provider.label || provider.name || provider.id || "Local fallback",
+      url: provider.url || "",
+      authMode: provider.authMode || "none",
+      authHeaderName: provider.authHeaderName || "Authorization",
+      defaultModel: provider.defaultModel || provider.models?.[0] || "gpt-4.1-mini",
+      models: Array.isArray(provider.models) ? provider.models : [],
+      enabled: provider.enabled !== false,
+      credentials: provider.credentials && !Object.keys(provider.credentials).some((key) => key.startsWith("has"))
+        ? provider.credentials
+        : {},
+    })),
+    null,
+    2
+  );
+}
+
+function parseProviders(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return [];
+  }
+  const parsed = JSON.parse(text);
+  const providers = Array.isArray(parsed)
+    ? parsed
+    : Object.entries(parsed).map(([id, provider]) => ({ id, ...(provider || {}) }));
+  return providers
+    .filter((provider) => provider && typeof provider === "object")
+    .map((provider) => ({
+      id: String(provider.id || provider.provider || provider.name || "").trim(),
+      label: String(provider.label || provider.name || provider.id || "").trim(),
+      url: String(provider.url || provider.baseUrl || provider.apiUrl || "").trim(),
+      authMode: String(provider.authMode || "none").trim().toLowerCase(),
+      authHeaderName: String(provider.authHeaderName || "Authorization").trim(),
+      defaultModel: String(provider.defaultModel || "").trim(),
+      models: Array.isArray(provider.models) ? provider.models.map((model) => String(model).trim()).filter(Boolean) : [],
+      enabled: provider.enabled !== false,
+      credentials: provider.credentials && typeof provider.credentials === "object" ? provider.credentials : {},
+    }))
+    .filter((provider) => provider.id);
+}
+
 export function buildModelRouterPayload(source) {
   return {
     url: readSourceValue(source, "url").trim(),
     authMode: readSourceValue(source, "authMode") || "none",
     authHeaderName: readSourceValue(source, "authHeaderName") || "Authorization",
     defaultModel: readSourceValue(source, "defaultModel") || "gpt-4.1-mini",
+    defaultProvider: readSourceValue(source, "defaultProvider") || "local",
     timeoutSeconds: parsePositiveMinutes(readSourceValue(source, "timeoutSeconds"), 15) || 15,
     roleModels: parseModelMap(readSourceValue(source, "roleModels")),
     stageModels: parseModelMap(readSourceValue(source, "stageModels")),
     taskTypeModels: parseModelMap(readSourceValue(source, "taskTypeModels")),
+    providers: parseProviders(readSourceValue(source, "providers")),
     credentials: {
       bearerToken: readSourceValue(source, "bearerToken"),
       basicUsername: readSourceValue(source, "basicUsername"),
@@ -981,6 +1043,7 @@ function renderModelsView() {
   const roleModels = modelRouter.roleModels || {};
   const stageModels = modelRouter.stageModels || {};
   const taskTypeModels = modelRouter.taskTypeModels || {};
+  const providers = Array.isArray(modelRouter.providers) ? modelRouter.providers : [];
   const credentials = modelRouter.credentials || {};
   const selected = selectedTask();
   const selectedRoutes = selected?.modelRouting || {};
@@ -996,7 +1059,7 @@ function renderModelsView() {
     <form id="model-router-form" class="model-router-form">
       <div class="field-grid">
         <label class="field">
-          <span class="field-label">Router URL</span>
+          <span class="field-label">External router URL</span>
           <input name="url" type="url" placeholder="https://router.local/v1/route" value="${escapeHtml(modelRouter.url || "")}">
         </label>
         <label class="field">
@@ -1018,6 +1081,20 @@ function renderModelsView() {
           <input name="timeoutSeconds" type="number" min="1" value="${escapeHtml(modelRouter.timeoutSeconds || 15)}">
         </label>
       </div>
+      <div class="field-grid compact">
+        <label class="field">
+          <span class="field-label">Default provider</span>
+          <input name="defaultProvider" type="text" value="${escapeHtml(modelRouter.defaultProvider || providers[0]?.id || "local")}">
+        </label>
+        <label class="field">
+          <span class="field-label">Configured providers</span>
+          <input type="text" value="${escapeHtml(providers.map((provider) => provider.id).join(", ") || "local")}" readonly>
+        </label>
+      </div>
+      <label class="field">
+        <span class="field-label">LLM provider APIs and models</span>
+        <textarea name="providers" rows="16">${escapeHtml(formatProviders(providers))}</textarea>
+      </label>
       <div class="field-grid compact">
         <label class="field">
           <span class="field-label">Auth header name</span>
@@ -1059,6 +1136,21 @@ function renderModelsView() {
       </div>
     </form>`;
 
+  const providerPreview = providers.length
+    ? providers
+        .map(
+          (provider) => `
+            <div class="compact-item">
+              <div>
+                <div class="name">${escapeHtml(provider.label || provider.id)}</div>
+                <div class="desc">${escapeHtml(provider.url || "no API URL")} • ${escapeHtml((provider.models || []).join(", ") || "no models")}</div>
+              </div>
+              <div class="status-chip ${provider.enabled === false ? "idle" : "completed"}">${escapeHtml(provider.id)}</div>
+            </div>`
+        )
+        .join("")
+    : `<div class="section-note">No provider catalog configured.</div>`;
+
   els.modelsResolution.innerHTML = `
     <div class="panel-header">
       <div>
@@ -1073,10 +1165,11 @@ function renderModelsView() {
         <div class="metric-value">${escapeHtml(selected?.taskId || "none")}</div>
       </div>
       <div class="metric-box">
-        <div class="metric-label">Router mode</div>
-        <div class="metric-value">${escapeHtml(modelRouter.url ? "remote" : "local")}</div>
+        <div class="metric-label">Default provider</div>
+        <div class="metric-value">${escapeHtml(modelRouter.defaultProvider || "local")}</div>
       </div>
     </div>
+    <div class="compact-list" style="margin-top:14px;">${providerPreview}</div>
     <div class="compact-list" style="margin-top:14px;">
       ${roleModelOptions
         .map(([role, label]) => {
@@ -1378,7 +1471,16 @@ async function runMonitoringDigest() {
 async function saveModelRouter(event) {
   event.preventDefault();
   const form = event.target;
-  const payload = buildModelRouterPayload(new FormData(form));
+  let payload;
+  try {
+    payload = buildModelRouterPayload(new FormData(form));
+  } catch (error) {
+    const message = document.querySelector("#model-router-message");
+    if (message) {
+      message.textContent = `Unable to save provider catalog: ${error.message}`;
+    }
+    return;
+  }
   const updated = await api("/model-router", {
     method: "POST",
     body: JSON.stringify(payload),

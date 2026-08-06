@@ -29,8 +29,10 @@ dependencies:
     modelRouterUrl: ""
     authMode: none
     authHeaderName: Authorization
+    defaultProvider: local
     defaultModel: gpt-4.1-mini
     timeoutSeconds: 15
+    providersJson: '[{"id":"local","label":"Local fallback","url":"","authMode":"none","authHeaderName":"Authorization","defaultModel":"gpt-4.1-mini","models":["gpt-4.1-mini","gpt-4.1"],"enabled":true}]'
     roleModelsJson: '{"draft_script":"gpt-4.1","citation_validator":"gpt-4.1-mini"}'
     stageModelsJson: '{}'
     taskTypeModelsJson: '{}'
