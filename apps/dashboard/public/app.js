@@ -13,6 +13,9 @@ const state = {
   recognition: null,
   voiceEnabled: false,
   audioEnabled: true,
+  playbackActive: false,
+  playbackLabel: "",
+  currentAudio: null,
   eventSource: null,
   newsComposerOpen: false,
 };
@@ -186,6 +189,9 @@ function setView(view) {
   for (const pane of els.views) {
     pane.classList.toggle("active", pane.id === `view-${view}`);
   }
+  if (window.location.hash !== `#${view}`) {
+    window.history.replaceState(null, "", `#${view}`);
+  }
 }
 
 function taskLookup(taskId) {
@@ -217,6 +223,150 @@ function selectedTaskSources(task) {
 function selectedTaskScript(task) {
   const artifact = selectedTaskArtifact(task);
   return artifact?.scriptSections || [];
+}
+
+function artifactAudio(artifact) {
+  return artifact?.audio?.base64Data ? artifact.audio : null;
+}
+
+function pausePlayback() {
+  if (state.currentAudio) {
+    state.currentAudio.pause();
+    state.currentAudio = null;
+  }
+  if ("speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+  }
+  state.playbackActive = false;
+  state.playbackLabel = "";
+}
+
+function playStartupTone() {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) return;
+  try {
+    const context = new AudioContext();
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.08, context.currentTime + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.42);
+    gain.connect(context.destination);
+
+    for (const [index, frequency] of [330, 440, 554].entries()) {
+      const oscillator = context.createOscillator();
+      oscillator.type = "sine";
+      oscillator.frequency.value = frequency;
+      oscillator.connect(gain);
+      oscillator.start(context.currentTime + index * 0.08);
+      oscillator.stop(context.currentTime + index * 0.08 + 0.22);
+    }
+    setTimeout(() => context.close().catch(() => {}), 650);
+  } catch {
+    // Browser audio can be unavailable in some embedded surfaces.
+  }
+}
+
+function buildTaskNarration(task, replay = []) {
+  if (!task) return "No task is selected.";
+  const artifact = selectedTaskArtifact(task);
+  const events = replay.length ? replay : selectedTaskEvents();
+  const narrativeMessages = events
+    .filter((event) => event?.data?.audience === "narrative" && event.data.message)
+    .slice(-5)
+    .map((event) => event.data.message);
+  const scriptLines = (artifact?.scriptSections || [])
+    .flatMap((section) => (section.lines || []).map((line) => line.text))
+    .filter(Boolean)
+    .slice(0, 8);
+  const sourceCount = artifact?.sources?.length || selectedTaskSources(task).length || task.sources?.length || 0;
+  const opening = `AKIRA task story for ${task.topic || task.taskId}. Status ${task.status}. Stage ${task.stage || "waiting"}. Progress ${task.progress || 0} percent.`;
+  const artifactLine = artifact
+    ? `The artifact package is ready with ${sourceCount} cited sources.`
+    : `No final artifact is attached yet. I will narrate the latest task progress instead.`;
+  const body = scriptLines.length
+    ? scriptLines.join(" ")
+    : narrativeMessages.join(" ");
+  return [opening, artifactLine, body || "Replay is quiet so far. AKIRA is standing by for the next event."]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function speakText(text, label = "Narrating task") {
+  pausePlayback();
+  playStartupTone();
+  state.playbackActive = true;
+  state.playbackLabel = label;
+  if (!("speechSynthesis" in window)) {
+    renderSidebarState();
+    renderHero();
+    renderPodcastView();
+    return;
+  }
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 0.98;
+  utterance.pitch = 0.94;
+  utterance.onend = () => {
+    state.playbackActive = false;
+    state.playbackLabel = "";
+    renderSidebarState();
+    renderHero();
+    renderPodcastView();
+    renderTasksView();
+  };
+  utterance.onerror = utterance.onend;
+  window.speechSynthesis.speak(utterance);
+  renderSidebarState();
+  renderHero();
+  renderPodcastView();
+  renderTasksView();
+}
+
+async function playTask(taskId = state.selectedTaskId) {
+  if (!state.audioEnabled) {
+    toggleAudio();
+  }
+  const task = taskLookup(taskId) || (taskId ? await api(`/tasks/${taskId}`) : selectedTask());
+  if (!task) return;
+  state.selectedTaskId = task.taskId;
+  const replay = await api(`/tasks/${task.taskId}/replay`).catch(() => ({ events: [] }));
+  state.selectedTaskReplayTaskId = task.taskId;
+  state.selectedTaskReplay = replay.events || [];
+  const artifact = selectedTaskArtifact(task);
+  const audio = artifactAudio(artifact);
+  pausePlayback();
+  playStartupTone();
+  state.playbackActive = true;
+  state.playbackLabel = `Playing ${task.topic || task.taskId}`;
+  if (audio) {
+    const player = new Audio(`data:${audio.mimeType || "audio/wav"};base64,${audio.base64Data}`);
+    state.currentAudio = player;
+    player.onended = () => {
+      state.playbackActive = false;
+      state.playbackLabel = "";
+      state.currentAudio = null;
+      renderAll();
+    };
+    player.onerror = () => speakText(buildTaskNarration(task, state.selectedTaskReplay), state.playbackLabel);
+    await player.play().catch(() => speakText(buildTaskNarration(task, state.selectedTaskReplay), state.playbackLabel));
+  } else {
+    speakText(buildTaskNarration(task, state.selectedTaskReplay), state.playbackLabel);
+  }
+  renderAll();
+}
+
+async function playAllTasks() {
+  const tasks = state.dashboard?.tasks || [];
+  if (!tasks.length) {
+    speakText("There are no tasks to narrate yet.", "No tasks");
+    return;
+  }
+  const stories = [];
+  for (const item of tasks) {
+    const task = await api(`/tasks/${item.taskId}`).catch(() => item);
+    const replay = await api(`/tasks/${item.taskId}/replay`).catch(() => ({ events: [] }));
+    stories.push(buildTaskNarration(task, replay.events || []));
+  }
+  speakText(stories.join(" Next task. "), `Playing ${tasks.length} tasks`);
 }
 
 function activeTranscriptLine() {
@@ -338,6 +488,7 @@ function renderHero() {
         <div class="hero-speaker">${escapeHtml(transcript)}</div>
         <div class="hero-controls">
           <button class="hero-chip" id="hero-new-task">New task</button>
+          <button class="hero-chip" id="hero-play-task">${state.playbackActive ? "Playing" : "Play task"}</button>
           <button class="hero-chip" id="hero-summary">Ask summary</button>
           <button class="hero-chip" id="hero-replay">Load replay</button>
           <button class="hero-chip" id="hero-voice-toggle">${state.voiceEnabled ? "Voice on" : "Voice off"}</button>
@@ -355,7 +506,7 @@ function renderHero() {
         </div>
         ${renderWaveform()}
         <div class="hero-audio">
-          <div class="hero-mini-label">Playback</div>
+          <div class="hero-mini-label">Playback ${state.playbackLabel ? `• ${escapeHtml(state.playbackLabel)}` : ""}</div>
           ${
             audio?.base64Data
               ? `<audio controls preload="none" src="data:${escapeHtml(audio.mimeType || "audio/wav")};base64,${audio.base64Data}"></audio>`
@@ -559,6 +710,7 @@ function renderPodcastView() {
     </div>
     <div class="hero-controls">
       <button class="hero-chip" id="podcast-summary">Ask summary</button>
+      <button class="hero-chip" id="podcast-play-task">${state.playbackActive ? "Playing" : "Play selected task"}</button>
       <button class="hero-chip" id="podcast-replay">Load replay</button>
       <button class="hero-chip" id="podcast-voice">${state.voiceEnabled ? "Voice on" : "Voice off"}</button>
       <button class="hero-chip" id="podcast-audio">${state.audioEnabled ? "Audio on" : "Audio off"}</button>
@@ -581,7 +733,10 @@ function renderTasksView() {
         <h3 class="panel-title">Tasks</h3>
         <p class="panel-note">Browse the current backlog and pick a task to inspect.</p>
       </div>
-      <div class="status-chip">${escapeHtml(tasks.length)} total</div>
+      <div class="panel-actions">
+        <button class="hero-chip" id="tasks-play-all">${state.playbackActive ? "Playing" : "Play all"}</button>
+        <div class="status-chip">${escapeHtml(tasks.length)} total</div>
+      </div>
     </div>
     <div class="compact-list" id="tasks-list-inner">
       ${tasks
@@ -598,6 +753,7 @@ function renderTasksView() {
               <div style="display:grid; gap:8px; min-width:140px; justify-items:end;">
                 <div class="status-chip ${escapeHtml(item.status)}">${escapeHtml(item.status)}</div>
                 <div class="progress ${progressClass(task?.taskId === item.taskId ? task?.progress || 0 : item.progress || 0)}"><span style="width:${Math.max(5, Math.min(100, task?.taskId === item.taskId ? task?.progress || 0 : item.progress || 0))}%"></span></div>
+                <span class="mini-action" data-play-task="${escapeHtml(item.taskId)}">${item.status === "completed" ? "Play" : "Narrate"}</span>
               </div>
             </button>`
         )
@@ -635,6 +791,7 @@ function renderTasksView() {
       </div>
       <div style="margin-top:14px;" class="progress ${progressClass(task.progress)}"><span style="width:${Math.max(5, Math.min(100, task.progress || 0))}%"></span></div>
       <div class="hero-controls" style="margin-top:14px;">
+        <button class="hero-chip" id="task-play">${state.playbackActive ? "Playing" : "Play / narrate"}</button>
         <button class="hero-chip" id="task-summary">Ask summary</button>
         <button class="hero-chip" id="task-replay">Load replay</button>
         <button class="hero-chip" id="task-podcast">Open podcast</button>
@@ -883,12 +1040,14 @@ function renderAll() {
 
 function bindHeroControls() {
   const heroNewTask = document.querySelector("#hero-new-task");
+  const heroPlayTask = document.querySelector("#hero-play-task");
   const heroSummary = document.querySelector("#hero-summary");
   const heroReplay = document.querySelector("#hero-replay");
   const heroVoice = document.querySelector("#hero-voice-toggle");
   const heroAudio = document.querySelector("#hero-audio-toggle");
 
   heroNewTask?.addEventListener("click", () => createTask().catch(console.error));
+  heroPlayTask?.addEventListener("click", () => playTask().catch(console.error));
   heroSummary?.addEventListener("click", () => taskAction("summary").catch(console.error));
   heroReplay?.addEventListener("click", () => loadReplay().catch(console.error));
   heroVoice?.addEventListener("click", () => toggleVoice());
@@ -1087,6 +1246,11 @@ function connectEvents(taskId) {
 }
 
 function bindGlobalListeners() {
+  const initialHash = window.location.hash.replace("#", "");
+  if (["home", "podcast", "tasks", "agents", "alerts"].includes(initialHash)) {
+    state.activeView = initialHash;
+  }
+
   for (const item of els.navItems) {
     item.addEventListener("click", () => {
       state.activeView = item.dataset.view;
@@ -1112,14 +1276,34 @@ function bindGlobalListeners() {
       closeTaskComposer();
     }
   });
+  window.addEventListener("hashchange", () => {
+    const view = window.location.hash.replace("#", "");
+    if (["home", "podcast", "tasks", "agents", "alerts"].includes(view)) {
+      state.activeView = view;
+      setView(view);
+    }
+  });
 
   els.tasksList.addEventListener("click", (event) => {
+    if (event.target.closest("#tasks-play-all")) {
+      playAllTasks().catch(console.error);
+      return;
+    }
+    const playTarget = event.target.closest("[data-play-task]");
+    if (playTarget) {
+      event.preventDefault();
+      event.stopPropagation();
+      state.selectedTaskId = playTarget.dataset.playTask;
+      playTask(playTarget.dataset.playTask).catch(console.error);
+      return;
+    }
     const item = event.target.closest("[data-task-id]");
     if (!item) return;
     const taskId = item.dataset.taskId;
     state.selectedTaskId = taskId;
-    state.activeView = "podcast";
+    state.activeView = "tasks";
     renderAll();
+    loadTaskReplay(taskId).catch(console.error);
   });
 
   els.podcastAudio.addEventListener("click", (event) => {
@@ -1127,6 +1311,9 @@ function bindGlobalListeners() {
     if (!target) return;
     if (target.id === "podcast-summary") {
       taskAction("summary").catch(console.error);
+    }
+    if (target.id === "podcast-play-task") {
+      playTask().catch(console.error);
     }
     if (target.id === "podcast-replay") {
       loadReplay().catch(console.error);
@@ -1144,6 +1331,9 @@ function bindGlobalListeners() {
     if (!target) return;
     if (target.id === "task-summary") {
       taskAction("summary").catch(console.error);
+    }
+    if (target.id === "task-play") {
+      playTask().catch(console.error);
     }
     if (target.id === "task-replay") {
       loadReplay().catch(console.error);

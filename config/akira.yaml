@@ -14,6 +14,7 @@ dependencies:
     storageUrl: http://storagemcp-platform:9100
     agentRuntimeUrl: http://agent-runtime:8081
     mcpServerUrl: http://mcp-server-generic:8080
+    mcpFallbackOnError: true
     natsUrl: nats://nats-jetstream:4222
 
   db:

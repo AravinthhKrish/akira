@@ -130,3 +130,57 @@ test("news profile composer payload expands into task context and schedule", asy
     global.document = originalDocument;
   }
 });
+
+test("dashboard proxy exposes task list replay and interrupt APIs", async () => {
+  const server = createDashboardServer({
+    orchestratorUrl: "http://mock-orchestrator",
+  });
+  const originalFetch = global.fetch;
+  const seen = [];
+  global.fetch = async (url, options = {}) => {
+    seen.push({ url: String(url), method: options.method || "GET" });
+    if (String(url).endsWith("/v1/tasks")) {
+      return new Response(JSON.stringify({ tasks: [{ taskId: "task_1", topic: "AKIRA", status: "completed" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (String(url).endsWith("/v1/tasks/task_1/replay")) {
+      return new Response(JSON.stringify({ taskId: "task_1", events: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (String(url).endsWith("/v1/tasks/task_1/interrupt")) {
+      return new Response(JSON.stringify({ taskId: "task_1", control: { lastAction: "summary" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+
+  try {
+    const listResponse = await emitRequest(server, createMockRequest("GET", "/api/tasks"));
+    assert.equal(listResponse.statusCode, 200);
+    assert.equal(JSON.parse(Buffer.concat(listResponse.chunks).toString("utf-8")).tasks[0].taskId, "task_1");
+
+    const replayResponse = await emitRequest(server, createMockRequest("GET", "/api/tasks/task_1/replay"));
+    assert.equal(replayResponse.statusCode, 200);
+    assert.equal(JSON.parse(Buffer.concat(replayResponse.chunks).toString("utf-8")).taskId, "task_1");
+
+    const interruptResponse = await emitRequest(
+      server,
+      createMockRequest("POST", "/api/tasks/task_1/interrupt", [Buffer.from(JSON.stringify({ action: "summary" }))])
+    );
+    assert.equal(interruptResponse.statusCode, 200);
+    assert.deepEqual(seen.map((item) => `${item.method} ${new URL(item.url).pathname}`), [
+      "GET /v1/tasks",
+      "GET /v1/tasks/task_1/replay",
+      "POST /v1/tasks/task_1/interrupt",
+    ]);
+  } finally {
+    global.fetch = originalFetch;
+    server.close();
+  }
+});

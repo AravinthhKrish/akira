@@ -24,6 +24,7 @@ data:
   STORAGE_URL: "http://storagemcp-platform:9100"
   AGENT_RUNTIME_URL: "http://agent-runtime:8081"
   MCP_SERVER_URL: "http://mcp-server-generic:8080"
+  MCP_FALLBACK_ON_ERROR: "true"
   NATS_URL: "nats://nats-jetstream:4222"
   STORAGE_BACKEND: "disk"
   STORAGE_DATA_DIR: "/app/data/storage"
@@ -200,6 +201,8 @@ spec:
           ports:
             - containerPort: 8081
           env:
+            - name: "SERVER_PORT"
+              value: "8081"
             - name: "PORT"
               value: "8081"
             - name: "OBSERVABILITY_LOG_DIR"
@@ -261,6 +264,8 @@ spec:
               value: "http://agent-runtime:8081"
             - name: "MCP_SERVER_URL"
               value: "http://mcp-server-generic:8080"
+            - name: "MCP_FALLBACK_ON_ERROR"
+              value: "true"
             - name: "DASHBOARD_URL"
               value: "http://akira-dashboard:3000"
             - name: "NATS_URL"

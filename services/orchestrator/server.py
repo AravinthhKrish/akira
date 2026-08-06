@@ -988,6 +988,14 @@ class TaskManager:
                     task["newsQuery"] = query_text
                     self._save_task(task)
                     result = self.mcp.search_news(query_text, limit=6)
+                    if result.get("warning"):
+                        self.emit_machine_event(
+                            task,
+                            "TASK_STATE_WORKING",
+                            stage.progress,
+                            result["warning"],
+                            stage.name,
+                        )
                     sources = self.workers.execute(stage.role, {"sources": result["articles"]})["sources"]
                     task["sources"] = sources
                     self.storage.upsert_vectors(

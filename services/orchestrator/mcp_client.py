@@ -1,4 +1,6 @@
 import json
+import os
+import urllib.error
 import urllib.request
 
 
@@ -43,6 +45,7 @@ def fallback_articles(topic: str) -> list[dict]:
 class MCPClient:
     def __init__(self, base_url: str | None):
         self.base_url = base_url.rstrip("/") if base_url else None
+        self.fallback_on_error = os.environ.get("MCP_FALLBACK_ON_ERROR", "true").lower() in {"1", "true", "yes", "on"}
 
     def search_news(self, topic: str, limit: int = 6) -> dict:
         if not self.base_url:
@@ -61,11 +64,19 @@ class MCPClient:
             headers={"content-type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=10) as response:
-            body = json.loads(response.read().decode("utf-8"))
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                body = json.loads(response.read().decode("utf-8"))
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as error:
+            if not self.fallback_on_error:
+                raise
+            return {
+                "articles": fallback_articles(topic)[:limit],
+                "freshness": "simulated-local-fallback",
+                "warning": f"MCP news search unavailable: {error}",
+            }
         result = body.get("result", {})
         return {
             "articles": result.get("articles", [])[:limit],
             "freshness": result.get("freshness", "live"),
         }
-

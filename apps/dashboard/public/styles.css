@@ -695,6 +695,14 @@ button {
   margin-bottom: 14px;
 }
 
+.panel-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .panel-title {
   margin: 0;
   font-size: 1.12rem;
@@ -979,6 +987,20 @@ button {
 .selected {
   border-color: rgba(155, 120, 255, 0.5) !important;
   background: rgba(94, 74, 206, 0.16) !important;
+}
+
+.mini-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(155, 120, 255, 0.45);
+  background: rgba(94, 74, 206, 0.22);
+  color: #efe9ff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .hero-mini-grid {

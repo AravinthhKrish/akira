@@ -279,6 +279,7 @@ function configMap(platform, config) {
       STORAGE_URL: String(api.storageUrl || ""),
       AGENT_RUNTIME_URL: String(api.agentRuntimeUrl || ""),
       MCP_SERVER_URL: String(api.mcpServerUrl || ""),
+      MCP_FALLBACK_ON_ERROR: String(api.mcpFallbackOnError ?? true),
       NATS_URL: String(api.natsUrl || ""),
       STORAGE_BACKEND: String(db.backend || "disk"),
       STORAGE_DATA_DIR: String(db.storageDataDir || "/app/data/storage"),
@@ -406,6 +407,7 @@ export function buildKubernetesDocuments(config) {
       "agent-runtime",
       [{ name: "http", port: services.agentRuntime?.port || 8081 }],
       [
+        envValue("SERVER_PORT", services.agentRuntime?.port || 8081),
         envValue("PORT", services.agentRuntime?.port || 8081),
         envValue("OBSERVABILITY_LOG_DIR", platform.observabilityLogDir),
       ],
@@ -423,6 +425,7 @@ export function buildKubernetesDocuments(config) {
         envValue("STORAGE_URL", api.storageUrl),
         envValue("AGENT_RUNTIME_URL", api.agentRuntimeUrl),
         envValue("MCP_SERVER_URL", api.mcpServerUrl),
+        envValue("MCP_FALLBACK_ON_ERROR", api.mcpFallbackOnError ?? true),
         envValue("DASHBOARD_URL", api.dashboardUrl),
         envValue("NATS_URL", api.natsUrl),
         envValue("OBSERVABILITY_LOG_DIR", platform.observabilityLogDir),

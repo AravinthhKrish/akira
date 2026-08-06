@@ -1,5 +1,6 @@
 import sys
 import time
+import urllib.error
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -108,6 +109,23 @@ class MonitoringTaskManager(TestableTaskManager):
 
 
 class TaskManagerTests(unittest.TestCase):
+    def test_mcp_client_falls_back_to_demo_articles_on_http_error(self):
+        client = MCPClient("http://mcp.local")
+        error = urllib.error.HTTPError(
+            "http://mcp.local/api/mcp/execute",
+            401,
+            "Unauthorized",
+            {},
+            None,
+        )
+
+        with patch("mcp_client.urllib.request.urlopen", side_effect=error):
+            result = client.search_news("AKIRA", limit=2)
+
+        self.assertEqual(len(result["articles"]), 2)
+        self.assertEqual(result["freshness"], "simulated-local-fallback")
+        self.assertIn("Unauthorized", result["warning"])
+
     def test_dashboard_overview_prioritizes_content_tasks_over_monitoring_tasks(self):
         storage = MemoryStorage()
         manager = MonitoringTaskManager(storage, MCPClient(None), WorkerClient(None))

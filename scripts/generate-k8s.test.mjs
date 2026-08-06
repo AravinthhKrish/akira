@@ -16,6 +16,7 @@ test("single AKIRA config drives service selection and dependency env", async ()
   const names = documents.map((document) => document.metadata?.name).filter(Boolean);
   const orchestrator = documents.find((document) => document.kind === "Deployment" && document.metadata.name === "akira-orchestrator");
   const storage = documents.find((document) => document.kind === "Deployment" && document.metadata.name === "storagemcp-platform");
+  const agentRuntime = documents.find((document) => document.kind === "Deployment" && document.metadata.name === "agent-runtime");
   const storageClaim = documents.find((document) => document.kind === "PersistentVolumeClaim" && document.metadata.name === "storagemcp-platform-data");
 
   assert.equal(config.platform.namespace, "akira");
@@ -28,6 +29,10 @@ test("single AKIRA config drives service selection and dependency env", async ()
   assert.ok(orchestratorEnv.some((item) => item.name === "STORAGE_URL" && item.value === "http://storagemcp-platform:9100"));
   assert.ok(orchestratorEnv.some((item) => item.name === "MODEL_ROUTER_DEFAULT_MODEL" && item.value === "gpt-4.1-mini"));
   assert.ok(orchestratorEnv.some((item) => item.name === "NATS_URL" && item.value === "nats://nats-jetstream:4222"));
+  assert.ok(orchestratorEnv.some((item) => item.name === "MCP_FALLBACK_ON_ERROR" && item.value === "true"));
+
+  const agentRuntimeEnv = agentRuntime.spec.template.spec.containers[0].env;
+  assert.ok(agentRuntimeEnv.some((item) => item.name === "SERVER_PORT" && item.value === "8081"));
 
   const storageContainer = storage.spec.template.spec.containers[0];
   assert.ok(storageContainer.volumeMounts.some((item) => item.name === "storage-data"));

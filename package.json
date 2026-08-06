@@ -6,6 +6,7 @@
   "scripts": {
     "dashboard": "node apps/dashboard/server.mjs",
     "storage": "node services/storage-mcp-platform/server.mjs",
+    "deploy:local": "node scripts/deploy-local.mjs",
     "k8s:generate": "node scripts/generate-k8s.mjs",
     "smoke": "node scripts/smoke.mjs",
     "test:k8s": "node --test scripts/generate-k8s.test.mjs",
