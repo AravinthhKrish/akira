@@ -10,9 +10,15 @@
     "deploy:k8s": "npm run k8s:generate && kubectl apply -f k8s/generated/akira.yaml",
     "undeploy:k8s": "kubectl delete -f k8s/generated/akira.yaml",
     "k8s:generate": "node scripts/generate-k8s.mjs",
+    "k8s:generate:local": "node scripts/generate-k8s.mjs --config config/akira.local-integrations.yaml --out k8s/generated/akira.local-integrations.yaml",
+    "deploy:k8s:local": "npm run k8s:generate:local && kubectl apply -f k8s/generated/akira.local-integrations.yaml",
+    "undeploy:k8s:local": "kubectl delete -f k8s/generated/akira.local-integrations.yaml",
     "smoke": "node scripts/smoke.mjs",
     "test:k8s": "node --test scripts/generate-k8s.test.mjs",
     "test:storage": "node --test services/storage-mcp-platform/tests/storage.test.mjs",
     "test:dashboard": "node --test apps/dashboard/server.test.mjs"
+  },
+  "optionalDependencies": {
+    "mongodb": "^6.9.0"
   }
 }

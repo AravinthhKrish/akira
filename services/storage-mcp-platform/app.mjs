@@ -1,23 +1,12 @@
 import { createServer as createHttpServer } from "node:http";
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createNodeObservability } from "../../packages/observability/node.mjs";
+import { createStorageBackends } from "./backends.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const defaultDataDir = path.resolve(__dirname, "../../data/storage");
-
-function createId(prefix = "id") {
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function tokenize(text) {
-  return String(text || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter(Boolean);
-}
 
 function jsonResponse(res, status, payload) {
   const body = JSON.stringify(payload, null, 2);
@@ -39,162 +28,53 @@ async function readJson(request) {
   return JSON.parse(Buffer.concat(chunks).toString("utf-8"));
 }
 
-async function ensureDir(dirPath) {
-  await mkdir(dirPath, { recursive: true });
-}
-
-async function readJsonFile(filePath, fallback = null) {
-  try {
-    const text = await readFile(filePath, "utf-8");
-    return JSON.parse(text);
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      return fallback;
-    }
-    throw error;
-  }
-}
-
-async function writeJsonFile(filePath, value) {
-  await ensureDir(path.dirname(filePath));
-  await writeFile(filePath, JSON.stringify(value, null, 2));
-}
-
-async function listJsonFiles(dirPath) {
-  try {
-    const entries = await readdir(dirPath);
-    return entries.filter((entry) => entry.endsWith(".json"));
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      return [];
-    }
-    throw error;
-  }
-}
-
 export function createStorageService(options = {}) {
   const dataDir = path.resolve(options.dataDir || defaultDataDir);
   const observability = createNodeObservability({ serviceName: "storage-mcp-platform" });
-  const configuredBackends = {
-    disk: true,
-    mongo: Boolean(options.mongoUrl || process.env.MONGO_URL),
-    weaviate: Boolean(options.weaviateUrl || process.env.WEAVIATE_URL)
-  };
-
-  const dirs = {
-    tasks: path.join(dataDir, "tasks"),
-    events: path.join(dataDir, "events"),
-    artifacts: path.join(dataDir, "artifacts"),
-    vectors: path.join(dataDir, "vectors")
-  };
+  const backends = createStorageBackends({ ...options, dataDir });
 
   async function init() {
-    await Promise.all(Object.values(dirs).map((dir) => ensureDir(dir)));
+    await Promise.all(backends.stores.map((store) => store.init()));
   }
 
   async function upsertTask(taskId, task) {
-    const record = {
-      ...task,
-      taskId,
-      updatedAt: new Date().toISOString()
-    };
-    await writeJsonFile(path.join(dirs.tasks, `${taskId}.json`), record);
-    return record;
+    return backends.documentStore.upsertTask(taskId, task);
   }
 
   async function getTask(taskId) {
-    return readJsonFile(path.join(dirs.tasks, `${taskId}.json`));
+    return backends.documentStore.getTask(taskId);
   }
 
   async function listTasks() {
-    const files = await listJsonFiles(dirs.tasks);
-    const tasks = await Promise.all(
-      files.map((file) => readJsonFile(path.join(dirs.tasks, file)))
-    );
-    return tasks.filter(Boolean).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+    return backends.documentStore.listTasks();
   }
 
   async function getTaskEvents(taskId, fromSeq = 0) {
-    const filePath = path.join(dirs.events, `${taskId}.json`);
-    const events = (await readJsonFile(filePath, [])) || [];
-    return events.filter((event) => Number(event?.data?.event_seq || 0) >= Number(fromSeq || 0));
+    return backends.documentStore.getTaskEvents(taskId, fromSeq);
   }
 
   async function appendEvent(event) {
-    const taskId = event?.data?.task_id;
-    if (!taskId) {
-      throw new Error("task_id is required in event.data");
-    }
-    const filePath = path.join(dirs.events, `${taskId}.json`);
-    const events = (await readJsonFile(filePath, [])) || [];
-    if (!events.some((existing) => existing.id === event.id)) {
-      events.push(event);
-      events.sort((a, b) => Number(a?.data?.event_seq || 0) - Number(b?.data?.event_seq || 0));
-      await writeJsonFile(filePath, events);
-    }
-    return event;
+    return backends.documentStore.appendEvent(event);
   }
 
   async function saveArtifact(taskId, artifactId, artifact) {
-    const record = {
-      ...artifact,
-      taskId,
-      artifactId,
-      updatedAt: new Date().toISOString()
-    };
-    await writeJsonFile(path.join(dirs.artifacts, taskId, `${artifactId}.json`), record);
-    return record;
+    return backends.documentStore.saveArtifact(taskId, artifactId, artifact);
   }
 
   async function listArtifacts(taskId) {
-    const artifactDir = path.join(dirs.artifacts, taskId);
-    const files = await listJsonFiles(artifactDir);
-    const artifacts = await Promise.all(
-      files.map((file) => readJsonFile(path.join(artifactDir, file)))
-    );
-    return artifacts.filter(Boolean).sort((a, b) => String(a.artifactId).localeCompare(String(b.artifactId)));
+    return backends.documentStore.listArtifacts(taskId);
   }
 
   async function upsertVectorItems(namespace, items) {
-    const filePath = path.join(dirs.vectors, `${namespace}.json`);
-    const current = (await readJsonFile(filePath, [])) || [];
-    const byId = new Map(current.map((item) => [item.id, item]));
-    for (const item of items) {
-      byId.set(item.id || createId("vec"), {
-        id: item.id || createId("vec"),
-        text: item.text || "",
-        metadata: item.metadata || {},
-        tokens: tokenize(item.text),
-        updatedAt: new Date().toISOString()
-      });
-    }
-    const next = [...byId.values()];
-    await writeJsonFile(filePath, next);
-    return { namespace, count: next.length };
+    return backends.vectorStore.upsertVectorItems(namespace, items);
   }
 
   async function queryVectorItems(namespace, query, limit = 5) {
-    const filePath = path.join(dirs.vectors, `${namespace}.json`);
-    const items = (await readJsonFile(filePath, [])) || [];
-    const queryTokens = tokenize(query);
-    const scored = items
-      .map((item) => {
-        const overlap = item.tokens.filter((token) => queryTokens.includes(token)).length;
-        const score = overlap / Math.max(item.tokens.length || 1, queryTokens.length || 1);
-        return { ...item, score: Number(score.toFixed(4)) };
-      })
-      .filter((item) => item.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit);
-    return { namespace, items: scored };
+    return backends.vectorStore.queryVectorItems(namespace, query, limit);
   }
 
   async function deleteVectorItems(namespace, ids = []) {
-    const filePath = path.join(dirs.vectors, `${namespace}.json`);
-    const items = (await readJsonFile(filePath, [])) || [];
-    const next = ids.length === 0 ? [] : items.filter((item) => !ids.includes(item.id));
-    await writeJsonFile(filePath, next);
-    return { namespace, deleted: ids.length === 0 ? items.length : ids.length };
+    return backends.vectorStore.deleteVectorItems(namespace, ids);
   }
 
   async function purgeTask(taskId, options = {}) {
@@ -204,17 +84,12 @@ export function createStorageService(options = {}) {
       vectors: options.vectors !== false,
       task: options.task === true
     };
-    if (include.events) {
-      await rm(path.join(dirs.events, `${taskId}.json`), { force: true });
-    }
-    if (include.artifacts) {
-      await rm(path.join(dirs.artifacts, taskId), { recursive: true, force: true });
-    }
-    if (include.vectors) {
-      await rm(path.join(dirs.vectors, `${taskId}.json`), { force: true });
-    }
-    if (include.task) {
-      await rm(path.join(dirs.tasks, `${taskId}.json`), { force: true });
+    await backends.documentStore.purgeTask(taskId, {
+      ...include,
+      vectors: backends.documentStore === backends.vectorStore ? include.vectors : false,
+    });
+    if (include.vectors && backends.documentStore !== backends.vectorStore) {
+      await backends.vectorStore.deleteVectorItems(taskId, []);
     }
     return { taskId, include };
   }
@@ -231,7 +106,7 @@ export function createStorageService(options = {}) {
           threadName: "storage.http",
           threadNumber: 10
         });
-        return jsonResponse(res, 200, { ok: true, service: "storage-mcp-platform" });
+        return jsonResponse(res, 200, { ok: true, service: "storage-mcp-platform", backend: backends.activeBackend });
       }
 
       if (req.method === "GET" && url.pathname === "/metrics") {
@@ -243,11 +118,7 @@ export function createStorageService(options = {}) {
       }
 
       if (req.method === "GET" && url.pathname === "/v1/capabilities") {
-        return jsonResponse(res, 200, {
-          defaultBackend: "disk",
-          backends: configuredBackends,
-          vectorMode: "disk-term-index"
-        });
+        return jsonResponse(res, 200, backends.capabilities);
       }
 
       if (req.method === "GET" && url.pathname === "/v1/tasks") {
@@ -357,6 +228,10 @@ export function createStorageService(options = {}) {
       queryVectorItems,
       deleteVectorItems,
       purgeTask
+    },
+    capabilities: backends.capabilities,
+    close: async () => {
+      await Promise.all(backends.stores.map((store) => store.close?.()));
     },
     createServer() {
       return createHttpServer(routes);

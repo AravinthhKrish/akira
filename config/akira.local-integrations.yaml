@@ -1,9 +1,17 @@
-# AKIRA single deployment configuration.
-# This file is the source of truth for generated Kubernetes manifests.
+# AKIRA local Mac integration configuration.
+# Designed for a local Mac M-series dev machine with external MongoDB, Weaviate, Ollama, and mcp-server-generic.
+#
+# Expected local services:
+# - MongoDB: mongodb://host.docker.internal:27017
+# - Weaviate: http://host.docker.internal:8080
+# - Ollama: http://host.docker.internal:11434
+# - mcp-server-generic: http://host.docker.internal:8088
+#
+# For manual non-container runs, replace host.docker.internal with 127.0.0.1.
 
 platform:
-  name: akira
-  namespace: akira
+  name: akira-local
+  namespace: akira-local
   imagePullPolicy: IfNotPresent
   observabilityLogDir: /app/data/observability/logs
 
@@ -13,26 +21,21 @@ dependencies:
     orchestratorUrl: http://akira-orchestrator:9000
     storageUrl: http://storagemcp-platform:9100
     agentRuntimeUrl: http://agent-runtime:8081
-    mcpServerUrl: http://mcp-server-generic:8080
+    mcpServerUrl: http://host.docker.internal:8088
     mcpFallbackOnError: true
     natsUrl: nats://nats-jetstream:4222
 
   db:
-    # backend accepts: disk, local, mongodb, mongo, weaviate.
-    # disk/local: task state, events, artifacts, and vector text index live on local disk.
-    # mongodb/mongo: task state, events, artifacts, and vector text index live in MongoDB.
-    # weaviate: task state/events/artifacts stay on disk; vector search uses Weaviate BM25 without explicit vectors.
-    # Optional hybrid override: set documentBackend: mongodb and vectorBackend: weaviate.
     backend: disk
-    documentBackend: ""
-    vectorBackend: ""
+    documentBackend: mongodb
+    vectorBackend: weaviate
     storageDataDir: /app/data/storage
     storageClassName: standard
     storageSize: 5Gi
-    mongodbUrl: ""
+    mongodbUrl: mongodb://host.docker.internal:27017
     mongodbDatabase: akira
     mongodbCollectionPrefix: storage
-    weaviateUrl: ""
+    weaviateUrl: http://host.docker.internal:8080
     weaviateClassName: AkiraStorageVectorItem
     weaviateApiKeySecretName: akira-storage-secrets
     weaviateApiKeySecretKey: WEAVIATE_API_KEY
@@ -41,13 +44,13 @@ dependencies:
     modelRouterUrl: ""
     authMode: none
     authHeaderName: Authorization
-    defaultProvider: local
-    defaultModel: gpt-4.1-mini
-    timeoutSeconds: 15
-    providersJson: '[{"id":"local","label":"Local fallback","url":"","authMode":"none","authHeaderName":"Authorization","defaultModel":"gpt-4.1-mini","models":["gpt-4.1-mini","gpt-4.1"],"enabled":true}]'
-    roleModelsJson: '{"draft_script":"gpt-4.1","citation_validator":"gpt-4.1-mini"}'
-    stageModelsJson: '{}'
-    taskTypeModelsJson: '{}'
+    defaultProvider: ollama
+    defaultModel: llama3.2:latest
+    timeoutSeconds: 60
+    providersJson: '[{"id":"ollama","label":"Local Ollama","url":"http://host.docker.internal:11434/api/chat","authMode":"none","authHeaderName":"Authorization","defaultModel":"llama3.2:latest","models":["llama3.2:latest","llama3.1:latest","mistral:latest","qwen2.5:latest"],"enabled":true}]'
+    roleModelsJson: '{"draft_script":"ollama:llama3.2:latest","citation_validator":"ollama:llama3.2:latest"}'
+    stageModelsJson: '{"draft_structure":"ollama:llama3.2:latest","generate_script":"ollama:llama3.2:latest","validate_citations":"ollama:llama3.2:latest"}'
+    taskTypeModelsJson: '{"news-podcast":"ollama:llama3.2:latest"}'
     bearerTokenSecretName: akira-model-router-secrets
     bearerTokenSecretKey: MODEL_ROUTER_BEARER_TOKEN
     basicUsernameSecretName: akira-model-router-secrets
@@ -93,11 +96,11 @@ services:
     port: 8081
 
   mcpServerGeneric:
-    enabled: true
+    enabled: false
     name: mcp-server-generic
     image: mcp-server-generic:latest
     replicas: 1
-    port: 8080
+    port: 8088
 
   nats:
     enabled: true

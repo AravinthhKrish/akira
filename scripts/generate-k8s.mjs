@@ -282,7 +282,12 @@ function configMap(platform, config) {
       MCP_FALLBACK_ON_ERROR: String(api.mcpFallbackOnError ?? true),
       NATS_URL: String(api.natsUrl || ""),
       STORAGE_BACKEND: String(db.backend || "disk"),
+      STORAGE_DOCUMENT_BACKEND: String(db.documentBackend || ""),
+      STORAGE_VECTOR_BACKEND: String(db.vectorBackend || ""),
       STORAGE_DATA_DIR: String(db.storageDataDir || "/app/data/storage"),
+      MONGODB_DATABASE: String(db.mongodbDatabase || "akira"),
+      MONGODB_COLLECTION_PREFIX: String(db.mongodbCollectionPrefix || "storage"),
+      WEAVIATE_CLASS_NAME: String(db.weaviateClassName || "AkiraStorageVectorItem"),
       MODEL_ROUTER_URL: String(llm.modelRouterUrl || ""),
       MODEL_ROUTER_AUTH_MODE: String(llm.authMode || "none"),
       MODEL_ROUTER_DEFAULT_PROVIDER: String(llm.defaultProvider || "local"),
@@ -320,6 +325,35 @@ function modelRouterEnv(llm = {}) {
   return env.filter(Boolean);
 }
 
+function storageBackendEnv(db = {}) {
+  return [
+    envValue("STORAGE_BACKEND", db.backend || "disk"),
+    envValue("STORAGE_DOCUMENT_BACKEND", db.documentBackend || ""),
+    envValue("STORAGE_VECTOR_BACKEND", db.vectorBackend || ""),
+    envValue("STORAGE_DATA_DIR", db.storageDataDir || "/app/data/storage"),
+    envValue("MONGODB_URL", db.mongodbUrl || ""),
+    envValue("MONGODB_DATABASE", db.mongodbDatabase || "akira"),
+    envValue("MONGODB_COLLECTION_PREFIX", db.mongodbCollectionPrefix || "storage"),
+    envValue("WEAVIATE_URL", db.weaviateUrl || ""),
+    envValue("WEAVIATE_CLASS_NAME", db.weaviateClassName || "AkiraStorageVectorItem"),
+    secretEnv("WEAVIATE_API_KEY", db.weaviateApiKeySecretName, db.weaviateApiKeySecretKey),
+  ].filter(Boolean);
+}
+
+function normalizedStorageBackend(value) {
+  const backend = String(value || "disk").trim().toLowerCase();
+  if (backend === "local") return "disk";
+  if (backend === "mongo") return "mongodb";
+  return backend;
+}
+
+function storageNeedsDiskVolume(db = {}) {
+  const activeBackend = normalizedStorageBackend(db.backend || "disk");
+  const documentBackend = normalizedStorageBackend(db.documentBackend || (activeBackend === "mongodb" ? "mongodb" : "disk"));
+  const vectorBackend = normalizedStorageBackend(db.vectorBackend || activeBackend);
+  return documentBackend === "disk" || vectorBackend === "disk";
+}
+
 function serviceDocs(config, serviceKey, containerName, ports, env, extra = {}) {
   const platform = config.platform;
   const service = config.services?.[serviceKey];
@@ -351,7 +385,8 @@ export function buildKubernetesDocuments(config) {
   const documents = [namespace(platform), configMap(platform, config)];
 
   const storageService = services.storageMcpPlatform;
-  if (enabled(storageService) && db.backend === "disk") {
+  const needsStorageDisk = storageNeedsDiskVolume(db);
+  if (enabled(storageService) && needsStorageDisk) {
     documents.push(pvc(platform, `${storageService.name}-data`, db.storageSize, db.storageClassName));
   }
 
@@ -377,13 +412,10 @@ export function buildKubernetesDocuments(config) {
       [{ name: "http", port: storageService?.port || 9100 }],
       [
         envValue("PORT", storageService?.port || 9100),
-        envValue("STORAGE_BACKEND", db.backend || "disk"),
-        envValue("STORAGE_DATA_DIR", db.storageDataDir || "/app/data/storage"),
-        envValue("MONGODB_URL", db.mongodbUrl || ""),
-        envValue("WEAVIATE_URL", db.weaviateUrl || ""),
+        ...storageBackendEnv(db),
         envValue("OBSERVABILITY_LOG_DIR", platform.observabilityLogDir),
       ],
-      enabled(storageService) && db.backend === "disk"
+      enabled(storageService) && needsStorageDisk
         ? {
             volumes: [
               {

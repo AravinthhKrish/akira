@@ -1,6 +1,6 @@
 # StorageMCP Platform Subplan
 
-Last updated: 2026-07-05
+Last updated: 2026-08-08
 
 ## Purpose
 
@@ -18,7 +18,11 @@ The storage layer provides a platform-owned abstraction for persistence, artifac
 ## Current implementation
 
 - Node service in `services/storage-mcp-platform/`
-- concrete disk-backed default
+- adapter-based backend selection through `STORAGE_BACKEND`
+- concrete disk-backed default, also selected by the `local` alias
+- optional MongoDB backend for tasks, events, artifacts, and vector text records
+- optional Weaviate backend for vectorless HTTP/BM25 vector search while task/event/artifact documents remain disk-backed
+- optional hybrid routing through `STORAGE_DOCUMENT_BACKEND` and `STORAGE_VECTOR_BACKEND`
 - HTTP endpoints for tasks, events, artifacts, vectors, purge, and capabilities
 - in-process API exposed for unit testing
 - structured JSON service logs
@@ -26,18 +30,19 @@ The storage layer provides a platform-owned abstraction for persistence, artifac
 
 ## Backend direction
 
-- **disk**: implemented default for local-first usage
-- **MongoDB**: planned persistence adapter
-- **Weaviate**: planned vector backend adapter
+- **disk/local**: implemented default for local-first usage
+- **MongoDB/mongo**: implemented document and vector text persistence adapter using the optional `mongodb` package
+- **Weaviate**: implemented vectorless HTTP adapter for BM25 source search; document persistence remains disk-backed
+- **MongoDB + Weaviate**: implemented hybrid mode for document persistence in MongoDB and vectorless source search in Weaviate
 
 ## Near-term improvements
 
-- formal adapter interface per backend
 - consistent retention policies and lifecycle classes
 - namespace separation for temporary retrieval corpora vs durable run records
 - stronger artifact metadata and content typing
 - backend-specific health reporting
 - optional future observability record storage or audit export helpers
+- secret generation docs for MongoDB and Weaviate credentials
 
 ## Guardrails
 

@@ -32,6 +32,8 @@ This repository is the composition repo for a local-first, single-user multi-age
   - deployment-selectable backend contract
   - full disk-backed task/event/artifact persistence
   - vector-style upsert/query/delete on a disk index
+  - MongoDB backend for task/event/artifact/vector text persistence
+  - Weaviate HTTP backend for vectorless BM25 source search while keeping task state on disk
   - structured JSON service logs
   - Prometheus-style metrics endpoint
   - retention/purge endpoints
@@ -55,7 +57,7 @@ Use these versions or newer unless your local tooling is already compatible:
 - A local sibling checkout of `mcp-server-generic` at `../mcp-server-generic` when using Docker Compose
 - Optional: `gh` for GitHub operations and `curl` for API smoke checks
 
-The repo currently uses mostly built-in Node and Python libraries, so there is no required root `npm install` for the dashboard/storage/orchestrator slice. The Kotlin runtime uses its checked-in Gradle wrapper under `services/agent-runtime/`.
+The repo currently uses mostly built-in Node and Python libraries, so there is no required root `npm install` for the default disk-backed dashboard/storage/orchestrator slice. The MongoDB storage backend uses the optional `mongodb` package; run `npm install` or use the storage Docker image before starting with `STORAGE_BACKEND=mongodb`. The Weaviate backend uses built-in HTTP `fetch`, not a Weaviate SDK. The Kotlin runtime uses its checked-in Gradle wrapper under `services/agent-runtime/`.
 
 ## Install Prerequisites
 
@@ -96,13 +98,75 @@ Configure these blocks first:
 - `platform`: namespace, labels, and local observability log directory.
 - `services`: enabled services, image names, ports, and replica counts.
 - `dependencies.api`: internal service URLs for dashboard, orchestrator, storage, MCP, agent runtime, and NATS.
-- `dependencies.db`: storage backend. `disk` is the simplest local mode; MongoDB and Weaviate URLs can be supplied for richer backends.
+- `dependencies.db`: storage backend. Use `disk`/`local`, `mongodb`/`mongo`, or `weaviate`. Disk is the simplest local mode; MongoDB stores tasks/events/artifacts/vector text records; Weaviate is used as a vectorless BM25 search backend while task state stays on disk.
 - `dependencies.llm`: LLM provider catalog, default provider/model, router URL, auth mode, and role/stage/task model mappings.
 - `dependencies.observability`: Elastic index pattern, Elasticsearch URL, Prometheus, and OpenTelemetry collector settings.
 
 The LLM model router can also be updated at runtime from the dashboard Models page or by posting to `/v1/model-router`. Provider catalogs are the approved source of model choices. Use `provider-id:model-name` in role or stage maps when you want a specific provider, for example `openai:gpt-4.1`.
 
 The New Task form reads the same provider catalog and lets you choose one configured model for that task. The selected value is saved as `modelPreference` and overrides role/stage defaults for every bounded agent stage in that task.
+
+Storage backend examples:
+
+```yaml
+dependencies:
+  db:
+    backend: disk
+```
+
+```yaml
+dependencies:
+  db:
+    backend: mongodb
+    mongodbUrl: mongodb://mongodb:27017
+    mongodbDatabase: akira
+    mongodbCollectionPrefix: storage
+```
+
+```yaml
+dependencies:
+  db:
+    backend: weaviate
+    storageDataDir: /app/data/storage
+    weaviateUrl: http://weaviate:8080
+    weaviateClassName: AkiraStorageVectorItem
+```
+
+When `backend: weaviate`, AKIRA does not send explicit embedding vectors. The storage service writes source text into Weaviate over HTTP and queries it with BM25 text search.
+
+For your local Mac setup with MongoDB, Weaviate, Ollama, and an already-running generic MCP server, use:
+
+[config/akira.local-integrations.yaml](config/akira.local-integrations.yaml)
+
+That profile uses MongoDB for task/event/artifact records and Weaviate for vectorless BM25 source search:
+
+```yaml
+dependencies:
+  db:
+    backend: disk
+    documentBackend: mongodb
+    vectorBackend: weaviate
+    mongodbUrl: mongodb://host.docker.internal:27017
+    weaviateUrl: http://host.docker.internal:8080
+```
+
+It also points the model router at local Ollama:
+
+```yaml
+dependencies:
+  llm:
+    defaultProvider: ollama
+    defaultModel: llama3.2:latest
+```
+
+Generate/deploy that local integration profile:
+
+```bash
+npm run k8s:generate:local
+npm run deploy:k8s:local
+```
+
+The config expects `mcp-server-generic` to be running externally at `http://host.docker.internal:8088`. Change `dependencies.api.mcpServerUrl` if your local MCP server uses a different port.
 
 ## Repo layout
 
@@ -257,12 +321,25 @@ Or use the single-command deployment path:
 npm run deploy:k8s
 ```
 
+Generate and deploy the local Mac integration profile instead:
+
+```bash
+npm run k8s:generate:local
+npm run deploy:k8s:local
+```
+
 Edit `config/akira.yaml` to change service images, enabled services, API URLs, storage backend, LLM model router settings, NATS, and observability wiring. The generated manifest is written to `k8s/generated/akira.yaml`.
 
 Stop the generated Kubernetes deployment:
 
 ```bash
 npm run undeploy:k8s
+```
+
+Stop the local Mac integration deployment:
+
+```bash
+npm run undeploy:k8s:local
 ```
 
 ## Notes about external services

@@ -22,7 +22,16 @@ services:
       dockerfile: services/storage-mcp-platform/Dockerfile
     environment:
       PORT: 9100
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-disk}
+      STORAGE_DOCUMENT_BACKEND: ${STORAGE_DOCUMENT_BACKEND:-}
+      STORAGE_VECTOR_BACKEND: ${STORAGE_VECTOR_BACKEND:-}
       STORAGE_DATA_DIR: /app/data/storage
+      MONGODB_URL: ${MONGODB_URL:-}
+      MONGODB_DATABASE: ${MONGODB_DATABASE:-akira}
+      MONGODB_COLLECTION_PREFIX: ${MONGODB_COLLECTION_PREFIX:-storage}
+      WEAVIATE_URL: ${WEAVIATE_URL:-}
+      WEAVIATE_API_KEY: ${WEAVIATE_API_KEY:-}
+      WEAVIATE_CLASS_NAME: ${WEAVIATE_CLASS_NAME:-AkiraStorageVectorItem}
       OBSERVABILITY_LOG_DIR: /app/data/observability/logs
     ports:
       - "9100:9100"

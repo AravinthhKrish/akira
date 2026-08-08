@@ -19,6 +19,7 @@ docs/journey/
 │   └── 2026-08-06-single-config-k8s-generation.md
 │   └── 2026-08-06-llm-provider-catalog.md
 │   └── 2026-08-08-dashboard-routing-task-model-selection.md
+│   └── 2026-08-08-storage-backend-switching.md
 └── layers/
     ├── dashboard.md
     ├── orchestrator.md
