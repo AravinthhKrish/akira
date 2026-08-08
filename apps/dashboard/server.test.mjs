@@ -83,6 +83,10 @@ test("dashboard shell serves the AKIRA command center layout", async () => {
     assert.match(homeHtml, /Podcast/);
     assert.match(homeHtml, /Agents/);
     assert.match(homeHtml, /Models/);
+    assert.match(homeHtml, /LLM model for this task/);
+
+    const faviconResponse = await emitRequest(server, createMockRequest("GET", "/favicon.ico"));
+    assert.equal(faviconResponse.statusCode, 204);
 
     const overviewResponse = await emitRequest(server, createMockRequest("GET", "/api/dashboard/overview"));
     assert.equal(overviewResponse.statusCode, 200);
@@ -110,6 +114,7 @@ test("news profile composer payload expands into task context and schedule", asy
     const payload = buildNewsTaskPayload(
       new Map([
         ["topic", "AKIRA launch"],
+        ["modelPreference", "openai:gpt-4.1"],
         ["focusKeywords", "voice, orchestration"],
         ["exclusions", "rumors"],
         ["entities", "AKIRA, MCP"],
@@ -122,6 +127,7 @@ test("news profile composer payload expands into task context and schedule", asy
 
     assert.equal(payload.type, "news-podcast");
     assert.equal(payload.topic, "AKIRA launch");
+    assert.equal(payload.modelPreference, "openai:gpt-4.1");
     assert.deepEqual(payload.newsContext.focusKeywords, ["voice", "orchestration"]);
     assert.deepEqual(payload.newsContext.entities, ["AKIRA", "MCP"]);
     assert.equal(payload.newsContext.freshnessWindowMinutes, 180);

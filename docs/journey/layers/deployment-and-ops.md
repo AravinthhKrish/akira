@@ -27,6 +27,8 @@ The ops layer makes the platform runnable locally today while keeping a clear pa
 - shared local observability log mirror mounted through compose
 - environment knobs for dynamic model routing (`MODEL_ROUTER_URL`, auth mode, credentials, and per-role/stage maps)
 - orchestrator API support for live router inspection and update
+- `npm run deploy:k8s` generates manifests from `config/akira.yaml` and applies the resulting single orchestrated Kubernetes bundle
+- `npm run undeploy:k8s` removes the generated Kubernetes bundle
 
 ## Near-term improvements
 

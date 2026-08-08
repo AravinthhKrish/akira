@@ -243,6 +243,7 @@ class TaskManager:
         task_type: str = "news-podcast",
         news_context: dict | None = None,
         news_schedule: dict | None = None,
+        model_preference: str | None = None,
     ) -> dict:
         task_id = f"task_{uuid.uuid4().hex[:8]}"
         run_id = f"run_{uuid.uuid4().hex[:8]}"
@@ -271,6 +272,7 @@ class TaskManager:
             "newsContext": context,
             "newsSchedule": schedule,
             "newsQuery": "",
+            "modelPreference": str(model_preference or "").strip(),
             "control": {
                 "pause": False,
                 "interrupt": False,
@@ -1515,6 +1517,7 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
                     body.get("type", "news-podcast"),
                     body.get("newsContext") if isinstance(body.get("newsContext"), dict) else None,
                     body.get("newsSchedule") if isinstance(body.get("newsSchedule"), dict) else None,
+                    body.get("modelPreference"),
                 )
                 return self._json(201, task)
 

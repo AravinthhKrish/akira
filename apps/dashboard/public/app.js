@@ -66,6 +66,15 @@ const toneClasses = {
 
 const appViews = ["home", "podcast", "tasks", "agents", "models", "alerts"];
 
+const viewLabels = {
+  home: "Home",
+  podcast: "Agent Podcast",
+  tasks: "Tasks",
+  agents: "Agents",
+  models: "Models",
+  alerts: "Alerts",
+};
+
 const summaryCardTargets = {
   activeAgents: "agents",
   tasksInProgress: "tasks",
@@ -178,9 +187,11 @@ export function buildNewsTaskPayload(source) {
   const freshnessWindowMinutes = parsePositiveMinutes(readSourceValue(source, "freshnessWindowMinutes"), 240) || 240;
   const refreshEveryMinutes = parsePositiveMinutes(readSourceValue(source, "refreshEveryMinutes"), 0);
   const scheduleEnabled = readSourceValue(source, "scheduleEnabled") === "on" || readSourceValue(source, "scheduleEnabled") === "true" || refreshEveryMinutes > 0;
+  const modelPreference = readSourceValue(source, "modelPreference").trim();
   return {
     type: "news-podcast",
     topic,
+    ...(modelPreference ? { modelPreference } : {}),
     newsContext: {
       topic,
       focusKeywords: splitProfileList(readSourceValue(source, "focusKeywords")),
@@ -213,19 +224,68 @@ function summaryIcon(key) {
   return icons[key] || icons.activeAgents;
 }
 
-function setView(view) {
+function configuredModelOptions(modelRouter = {}) {
+  const providers = Array.isArray(modelRouter.providers) ? modelRouter.providers : [];
+  const options = [];
+  for (const provider of providers) {
+    if (provider.enabled === false) continue;
+    for (const model of provider.models || []) {
+      const providerId = provider.id || provider.provider || modelRouter.defaultProvider || "local";
+      const value = `${providerId}:${model}`;
+      options.push({
+        value,
+        label: `${provider.label || providerId} / ${model}`,
+      });
+    }
+  }
+  if (!options.length) {
+    const defaultModel = modelRouter.defaultModel || "gpt-4.1-mini";
+    const defaultProvider = modelRouter.defaultProvider || "";
+    options.push({
+      value: defaultProvider ? `${defaultProvider}:${defaultModel}` : defaultModel,
+      label: `${defaultProvider || "Default"} / ${defaultModel}`,
+    });
+  }
+  return options;
+}
+
+function renderTaskModelOptions(selectedValue = "") {
+  const select = document.querySelector("#task-model-preference");
+  if (!select) return;
+  const modelRouter = state.dashboard?.modelRouter || {};
+  const options = configuredModelOptions(modelRouter);
+  const configuredDefault = modelRouter.defaultProvider && modelRouter.defaultModel ? `${modelRouter.defaultProvider}:${modelRouter.defaultModel}` : modelRouter.defaultModel;
+  const defaultValue = selectedValue || options.find((option) => option.value === configuredDefault)?.value || options[0]?.value || "";
+  select.innerHTML = [
+    `<option value="">Use router defaults</option>`,
+    ...options.map(
+      (option) => `<option value="${escapeHtml(option.value)}" ${option.value === defaultValue ? "selected" : ""}>${escapeHtml(option.label)}</option>`
+    ),
+  ].join("");
+}
+
+function setView(view, options = {}) {
   if (!appViews.includes(view)) {
     view = "home";
   }
   state.activeView = view;
   for (const item of els.navItems) {
     item.classList.toggle("active", item.dataset.view === view);
+    item.setAttribute("aria-selected", String(item.dataset.view === view));
   }
   for (const pane of els.views) {
-    pane.classList.toggle("active", pane.id === `view-${view}`);
+    const active = pane.id === `view-${view}`;
+    pane.classList.toggle("active", active);
+    pane.toggleAttribute("hidden", !active);
   }
-  if (window.location.hash !== `#${view}`) {
+  document.title = `AKIRA Command Center - ${viewLabels[view] || "Home"}`;
+  if (window.location.hash !== `#${view}` && options.push !== false) {
+    window.history.pushState(null, "", `#${view}`);
+  } else if (window.location.hash !== `#${view}`) {
     window.history.replaceState(null, "", `#${view}`);
+  }
+  if (options.scroll) {
+    document.querySelector(`#view-${view}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 }
 
@@ -538,6 +598,10 @@ function renderNewsProfile(task) {
     {
       label: "Schedule",
       value: schedule.enabled ? `Every ${schedule.refreshEveryMinutes || 60} minutes` : "One-time",
+    },
+    {
+      label: "LLM",
+      value: task?.modelPreference || "Router defaults",
     },
     {
       label: "Refreshes",
@@ -1388,6 +1452,13 @@ async function loadTaskReplay(taskId) {
   renderAll();
 }
 
+async function refreshModelRouterConfig() {
+  const modelRouter = await api("/model-router");
+  state.dashboard = state.dashboard || {};
+  state.dashboard.modelRouter = modelRouter;
+  return modelRouter;
+}
+
 function openTaskComposer(prefill = {}) {
   if (!els.newsTaskModal || !els.newsTaskForm) return;
   state.newsComposerOpen = true;
@@ -1400,6 +1471,7 @@ function openTaskComposer(prefill = {}) {
   const refreshInput = els.newsTaskForm.querySelector('[name="refreshEveryMinutes"]');
   const scheduleEnabledInput = els.newsTaskForm.querySelector('[name="scheduleEnabled"]');
 
+  renderTaskModelOptions(prefill.modelPreference || "");
   topicInput.value = prefill.topic || "multi agent platform news, voice interfaces, storage mcp, orchestration";
   keywordsInput.value = prefill.focusKeywords || "agents, orchestration, voice";
   exclusionsInput.value = prefill.exclusions || "";
@@ -1430,12 +1502,17 @@ async function submitTaskComposer(event) {
     body: JSON.stringify(payload),
   });
   state.selectedTaskId = created.taskId;
-  state.activeView = "podcast";
   closeTaskComposer();
   await loadDashboard();
+  setView("podcast", { scroll: true });
 }
 
 async function createTask() {
+  try {
+    await refreshModelRouterConfig();
+  } catch (error) {
+    console.error(error);
+  }
   openTaskComposer();
 }
 
@@ -1464,8 +1541,8 @@ async function runMonitoringDigest() {
     body: JSON.stringify({ windowMinutes: 15 }),
   });
   state.selectedTaskId = result?.task?.taskId || state.selectedTaskId;
-  state.activeView = "alerts";
   await loadDashboard();
+  setView("alerts", { scroll: true });
 }
 
 async function saveModelRouter(event) {
@@ -1491,8 +1568,7 @@ async function saveModelRouter(event) {
     message.textContent = `Saved. Source ${updated.source || "runtime"} • default ${updated.defaultModel || "gpt-4.1-mini"}`;
   }
   await loadDashboard();
-  state.activeView = "models";
-  setView("models");
+  setView("models", { scroll: true });
 }
 
 async function testModelRoute() {
@@ -1508,8 +1584,7 @@ async function testModelRoute() {
     message.textContent = `Test route${task ? ` for ${task.taskId}` : ""}: ${resolved.model} from ${resolved.source || "local"}`;
   }
   await loadDashboard();
-  state.activeView = "models";
-  setView("models");
+  setView("models", { scroll: true });
 }
 
 function sendVoiceCommand(commandText) {
@@ -1529,7 +1604,7 @@ function ensureVoiceSocket() {
     const payload = JSON.parse(event.data);
     if (payload.result?.taskId) {
       state.selectedTaskId = payload.result.taskId;
-      state.activeView = "podcast";
+      setView("podcast", { scroll: true });
       loadDashboard().catch(console.error);
       loadTaskReplay(payload.result.taskId).catch(console.error);
     }
@@ -1601,8 +1676,7 @@ function bindGlobalListeners() {
 
   for (const item of els.navItems) {
     item.addEventListener("click", () => {
-      state.activeView = item.dataset.view;
-      setView(state.activeView);
+      setView(item.dataset.view, { scroll: true });
     });
   }
 
@@ -1628,15 +1702,14 @@ function bindGlobalListeners() {
     const view = window.location.hash.replace("#", "");
     if (appViews.includes(view)) {
       state.activeView = view;
-      setView(view);
+      setView(view, { push: false });
     }
   });
 
   els.summaryCards.addEventListener("click", (event) => {
     const target = event.target.closest("[data-summary-view]");
     if (!target) return;
-    state.activeView = target.dataset.summaryView;
-    setView(state.activeView);
+    setView(target.dataset.summaryView, { scroll: true });
   });
 
   els.tasksList.addEventListener("click", (event) => {
@@ -1656,7 +1729,7 @@ function bindGlobalListeners() {
     if (!item) return;
     const taskId = item.dataset.taskId;
     state.selectedTaskId = taskId;
-    state.activeView = "tasks";
+    setView("tasks");
     renderAll();
     loadTaskReplay(taskId).catch(console.error);
   });
@@ -1694,8 +1767,7 @@ function bindGlobalListeners() {
       loadReplay().catch(console.error);
     }
     if (target.id === "task-podcast") {
-      state.activeView = "podcast";
-      setView(state.activeView);
+      setView("podcast", { scroll: true });
     }
   });
 

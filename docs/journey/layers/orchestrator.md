@@ -1,6 +1,6 @@
 # Orchestrator Layer Subplan
 
-Last updated: 2026-07-05
+Last updated: 2026-08-08
 
 ## Purpose
 
@@ -48,6 +48,7 @@ The orchestrator owns task lifecycle, workflow control, replay coordination, and
 - router config now includes a provider catalog with API URL, provider auth mode, preconfigured model list, default provider, and catalog enforcement for posted provider configs
 - `/v1/model-router` exposes the active router config and update hook
 - stage execution records the selected model in usage telemetry instead of relying on hardcoded literals
+- task creation can persist `modelPreference` as `provider-id:model-name`; the model router uses that as the highest-priority route for all bounded agent stages in the task
 - news tasks now persist a reusable `newsContext` profile and recurring `newsSchedule` snapshot on the task
 - source discovery expands that profile into a single MCP text query for `news.search_articles`
 - a background refresh loop re-runs due contextual news tasks and emits replayable machine plus narrative refresh events

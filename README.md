@@ -89,7 +89,7 @@ cd idea-workshop
 
 ## What to configure
 
-Start with [config/akira.yaml](config/akira.yaml). It is the single deployment input for generated Kubernetes manifests.
+Start with [config/akira.yaml](config/akira.yaml). It is the single deployment input for generated Kubernetes manifests. Edit this file first, then deploy with `npm run deploy:k8s`.
 
 Configure these blocks first:
 
@@ -101,6 +101,8 @@ Configure these blocks first:
 - `dependencies.observability`: Elastic index pattern, Elasticsearch URL, Prometheus, and OpenTelemetry collector settings.
 
 The LLM model router can also be updated at runtime from the dashboard Models page or by posting to `/v1/model-router`. Provider catalogs are the approved source of model choices. Use `provider-id:model-name` in role or stage maps when you want a specific provider, for example `openai:gpt-4.1`.
+
+The New Task form reads the same provider catalog and lets you choose one configured model for that task. The selected value is saved as `modelPreference` and overrides role/stage defaults for every bounded agent stage in that task.
 
 ## Repo layout
 
@@ -249,12 +251,18 @@ npm run k8s:generate
 kubectl apply -f k8s/generated/akira.yaml
 ```
 
+Or use the single-command deployment path:
+
+```bash
+npm run deploy:k8s
+```
+
 Edit `config/akira.yaml` to change service images, enabled services, API URLs, storage backend, LLM model router settings, NATS, and observability wiring. The generated manifest is written to `k8s/generated/akira.yaml`.
 
 Stop the generated Kubernetes deployment:
 
 ```bash
-kubectl delete -f k8s/generated/akira.yaml
+npm run undeploy:k8s
 ```
 
 ## Notes about external services

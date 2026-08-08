@@ -41,6 +41,35 @@ class ModelRouterTests(unittest.TestCase):
         self.assertEqual(router.resolve(task={"type": "system-monitoring"})["model"], "gpt-task")
         self.assertEqual(router.resolve()["model"], "gpt-default")
 
+    def test_task_model_preference_overrides_role_and_stage_mappings(self):
+        router = ModelRouter(
+            ModelRouterConfig(
+                default_model="gpt-default",
+                role_models={"draft_script": "gpt-role"},
+                stage_models={"generate_script": "gpt-stage"},
+                providers={
+                    "openai": LlmProviderConfig(
+                        provider_id="openai",
+                        label="OpenAI",
+                        models=["gpt-task", "gpt-role", "gpt-stage"],
+                        default_model="gpt-task",
+                    )
+                },
+                default_provider="openai",
+                catalog_enforced=True,
+            )
+        )
+
+        route = router.resolve(
+            task={"type": "news-podcast", "modelPreference": "openai:gpt-task"},
+            stage_name="generate_script",
+            role="draft_script",
+        )
+
+        self.assertEqual(route["model"], "gpt-task")
+        self.assertEqual(route["provider"], "openai")
+        self.assertEqual(route["source"], "taskPreference")
+
     def test_runtime_updates_return_sanitized_config(self):
         router = ModelRouter(ModelRouterConfig(default_model="gpt-default"))
         snapshot = router.update(

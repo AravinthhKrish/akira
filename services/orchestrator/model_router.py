@@ -440,9 +440,13 @@ class ModelRouter:
 
     def _resolve_local(self, config: ModelRouterConfig, task: dict | None, stage_name: str | None, role: str | None, fallback_model: str | None) -> dict[str, Any]:
         task_type = (task or {}).get("type")
+        task_model_preference = (task or {}).get("modelPreference")
         selection = None
         source = "default"
-        if role and role in config.role_models:
+        if task_model_preference:
+            selection = task_model_preference
+            source = "taskPreference"
+        elif role and role in config.role_models:
             selection = config.role_models[role]
             source = "role"
         elif stage_name and stage_name in config.stage_models:
@@ -472,6 +476,7 @@ class ModelRouter:
             "runId": (task or {}).get("runId"),
             "taskType": (task or {}).get("type"),
             "topic": (task or {}).get("topic"),
+            "modelPreference": (task or {}).get("modelPreference"),
             "stage": stage_name,
             "role": role,
             "defaultModel": config.default_model,

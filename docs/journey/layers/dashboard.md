@@ -1,6 +1,6 @@
 # Dashboard Layer Subplan
 
-Last updated: 2026-07-05
+Last updated: 2026-08-08
 
 ## Purpose
 
@@ -34,10 +34,11 @@ The dashboard is the human control surface for the platform. It should make the 
 - news task composer now captures a reusable profile with topic, keywords, exclusions, entities, source preferences, freshness, and recurring refresh period
 - task detail panels render the persisted news profile plus the expanded MCP query used for retrieval
 - the browser bundle is safe to import in tests without auto-bootstrapping the UI
+- sidebar navigation now acts as hash-routed dashboard tabs for Home, Podcast, Tasks, Agents, Models, and Alerts
+- task creation loads the live configured LLM provider catalog and lets the user choose a provider/model for that task
 
 ## Near-term improvements
 
-- richer task list and historical run browser
 - source/citation drill-down UI
 - better empty-state handling for monitoring-only windows
 - better replay filtering between machine and narrative events
@@ -45,6 +46,7 @@ The dashboard is the human control surface for the platform. It should make the 
 - transport/auth hardening for WebSocket voice sessions
 - richer monitoring digest browsing and playback controls
 - editable saved profiles for reusing and cloning contextual news tasks
+- persisted user preference for the default dashboard tab
 
 ## Guardrails
 

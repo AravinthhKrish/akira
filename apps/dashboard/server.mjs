@@ -114,6 +114,12 @@ export function createDashboardServer(options = {}) {
         return sendJson(res, 200, { ok: true, service: "dashboard" });
       }
 
+      if (req.method === "GET" && url.pathname === "/favicon.ico") {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
       if (req.method === "GET" && url.pathname === "/metrics") {
         observability.setGauge("akira_dashboard_voice_connections", activeVoiceSockets, { service: "dashboard" });
         res.writeHead(200, { "content-type": "text/plain; version=0.0.4; charset=utf-8" });

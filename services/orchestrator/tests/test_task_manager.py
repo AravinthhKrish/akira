@@ -13,7 +13,7 @@ if str(SERVICE_DIR) not in sys.path:
 
 import server
 from mcp_client import MCPClient, fallback_articles
-from model_router import ModelRouter, ModelRouterConfig
+from model_router import LlmProviderConfig, ModelRouter, ModelRouterConfig
 from server import (
     TaskManager,
     build_news_search_query,
@@ -203,6 +203,35 @@ class TaskManagerTests(unittest.TestCase):
         models = manager.usage_tracker.by_model(15)["models"]
         self.assertIn("gpt-role-script", models)
         self.assertIn("gpt-stage-validation", models)
+
+    def test_run_task_uses_task_model_preference_from_creation(self):
+        storage = MemoryStorage()
+        router = ModelRouter(
+            ModelRouterConfig(
+                default_model="gpt-default",
+                default_provider="openai",
+                catalog_enforced=True,
+                providers={
+                    "openai": LlmProviderConfig(
+                        provider_id="openai",
+                        label="OpenAI",
+                        models=["gpt-task-selected", "gpt-role-script"],
+                        default_model="gpt-task-selected",
+                    )
+                },
+                role_models={"draft_script": "gpt-role-script"},
+            )
+        )
+        manager = TestableTaskManager(storage, MCPClient(None), WorkerClient(None), model_router=router)
+        with patch.object(server.time, "sleep", lambda *_args, **_kwargs: None):
+            task = manager.create_task("agent podcast", model_preference="openai:gpt-task-selected")
+            manager._run_task(task["taskId"])
+        completed = storage.get_task(task["taskId"])
+        self.assertEqual(completed["modelPreference"], "openai:gpt-task-selected")
+        self.assertEqual(completed["modelRouting"]["generate_script"]["model"], "gpt-task-selected")
+        self.assertEqual(completed["modelRouting"]["generate_script"]["source"], "taskPreference")
+        models = manager.usage_tracker.by_model(15)["models"]
+        self.assertIn("gpt-task-selected", models)
 
     def test_news_context_builds_expanded_query_and_persists_profile(self):
         storage = MemoryStorage()
